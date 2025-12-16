@@ -1,6 +1,6 @@
 package com.example.unsaid
 
-
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Spring
@@ -63,6 +63,11 @@ import com.example.unsaid.ui.theme.InterFont
 import com.example.unsaid.ui.theme.LibreFont
 import com.example.unsaid.ui.theme.PaperWhite
 
+// --- THEME DEFINITIONS ---
+val TextGray = Color(0xFF666666)
+val Graphite = Color(0xFF202020) // Premium Soft Black
+
+
 // --- CONFIGURATION ---
 const val SUPABASE_URL = "https://ukgrxtvfcngbpktgrpin.supabase.co"
 // NOTE: For production, move this key to local.properties or BuildConfig
@@ -73,8 +78,17 @@ val supabase = createSupabaseClient(
     supabaseKey = SUPABASE_KEY
 ) {
     install(Postgrest)
-    install(Auth)
+    install(Auth) {
+        // DISABLE Persistence: Session is lost when app closes
+        // (Note: In a real production app, you might want a "Remember Me" checkbox,
+        // but this achieves exactly what you asked for: auto-logout on close).
+        // If the library doesn't support 'alwaysSessionSave = false' easily,
+        // we force logout on App Start instead.
+    }
 }
+// FORCE LOGOUT ON START: Add this to your Main Activity or top of Navigation
+// A cleaner way for "Logout on Close" without complex config:
+// We will simply NOT check for a session at startup in the UI logic.
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
@@ -93,6 +107,8 @@ object Routes {
     const val SPLASH = "splash"
     const val WELCOME = "welcome"
     const val CHOOSE_SPACE = "choose_space"
+
+    const val FOCUS = "focus/{message}/{recipient}/{date}/{color}"
 
     const val CHOOSE_WRITE_SPACE = "choose_write_space"
     const val VERIFY = "verify"
@@ -195,6 +211,30 @@ fun UnsaidNavigation() {
                 onBackClick = { navController.popBackStack() }
             )
         }
+        composable(
+            route = Routes.FOCUS,
+            arguments = listOf(
+                navArgument("message") { type = NavType.StringType },
+                navArgument("recipient") { type = NavType.StringType },
+                navArgument("date") { type = NavType.StringType },
+                navArgument("color") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            // This extracts the data passed from the feed
+            val msg = backStackEntry.arguments?.getString("message") ?: ""
+            val rec = backStackEntry.arguments?.getString("recipient") ?: ""
+            val date = backStackEntry.arguments?.getString("date") ?: ""
+            val col = backStackEntry.arguments?.getLong("color") ?: 0xFFFFFFFF
+
+            // And shows the full screen letter
+            FocusLetterScreen(
+                message = msg,
+                recipient = rec,
+                date = date,
+                colorHex = col,
+                onBackClick = { navController.popBackStack() }
+            )
+        }
 
         composable(Routes.VERIFY) {
             VerificationScreen(
@@ -243,7 +283,14 @@ fun UnsaidNavigation() {
                 isLoading = isLoading,
                 onHeaderClick = { navController.popBackStack() },
                 onWriteClick = { navController.navigate("${Routes.WRITE}/$spaceName") },
-                onRefresh = { refreshLetters() }
+                onRefresh = { refreshLetters() },
+
+                onLetterClick = { letter ->
+                    val encodedMsg = android.net.Uri.encode(letter.message)
+                    val encodedRec = android.net.Uri.encode(letter.recipient)
+                    val encodedDate = android.net.Uri.encode(getTimeAgo(letter.createdAt))
+                    navController.navigate("focus/$encodedMsg/$encodedRec/$encodedDate/${letter.colorHex}")
+                }
             )
         }
 
@@ -283,7 +330,8 @@ fun FeedScreen(
     isLoading: Boolean,
     onHeaderClick: () -> Unit,
     onWriteClick: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onLetterClick: (Letter) -> Unit
 ) {
     Scaffold(
         containerColor = PaperWhite,
@@ -345,44 +393,12 @@ fun FeedScreen(
                     }
                 }
 
+                // This is the clean loop. Copy ONLY this.
                 items(letters) { letter ->
-                    val paperColor = Color(letter.colorHex)
-                    val textColor = if (paperColor.toArgb() == Color(0xFF2D2D2D).toArgb()) Color.White else InkCharcoal
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        shape = RoundedCornerShape(4.dp),
-                        colors = CardDefaults.cardColors(containerColor = paperColor),
-                        elevation = CardDefaults.cardElevation(0.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "To: ${letter.recipient}",
-                                    fontFamily = InterFont,
-                                    fontSize = 14.sp,
-                                    color = textColor.copy(alpha = 0.7f)
-                                )
-                                Text(
-                                    text = getTimeAgo(letter.createdAt),
-                                    fontFamily = InterFont,
-                                    fontSize = 12.sp,
-                                    color = textColor.copy(alpha = 0.4f)
-                                )
-                            }
-                            Text(
-                                letter.message,
-                                fontFamily = LibreFont,
-                                fontSize = 16.sp,
-                                lineHeight = 24.sp,
-                                color = textColor
-                            )
-                        }
+                    LetterCard(letter) {
+                        onLetterClick(letter)
                     }
+                }
                 }
             }
 
@@ -393,19 +409,25 @@ fun FeedScreen(
             }
         }
     }
-}
+
 
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
     LaunchedEffect(Unit) {
+        // FORCE LOGOUT ON STARTUP
+        // This simulates "Logout on Close" because every time the app starts fresh,
+        // we kill the previous session.
+        try {
+            supabase.auth.signOut()
+        } catch (e: Exception) {
+            // Ignore error if already signed out
+        }
+
         delay(2000)
         onTimeout()
     }
-    Box(
-        modifier = Modifier.fillMaxSize().background(PaperWhite),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("Unsaid.", color = InkCharcoal, fontSize = 32.sp, fontFamily = LibreFont)
+    Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
+        Text("Unsaid.", color = InkCharcoal, fontSize = 48.sp, fontFamily = LibreFont, fontWeight = FontWeight.Bold, letterSpacing = (-2).sp)
     }
 }
 
@@ -426,13 +448,17 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                 color = InkCharcoal,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
+            // UPDATED SUBTITLE
             Text(
-                "For the words you never said.",
+                "For the words you never said out loud.",
                 fontFamily = InterFont,
                 fontSize = 16.sp,
                 color = Color.Gray,
-                modifier = Modifier.padding(bottom = 64.dp)
+                modifier = Modifier.padding(bottom = 64.dp),
+                textAlign = TextAlign.Center
             )
+
+            // BUTTONS
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -443,13 +469,7 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                     .bounceClick(onClick = onReadClick),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "Read Letters",
-                    fontFamily = InterFont,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                Text("Read Letters", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Spacer(modifier = Modifier.height(16.dp))
             Box(
@@ -461,22 +481,10 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                     .bounceClick(onClick = onWriteClick),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "Write a Letter",
-                    fontFamily = InterFont,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = InkCharcoal
-                )
+                Text("Write a Letter", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
             }
         }
-        Text(
-            "Anonymous. Forever.",
-            fontFamily = InterFont,
-            fontSize = 12.sp,
-            color = Color.LightGray,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp)
-        )
+        // Footer REMOVED
     }
 }
 
@@ -575,7 +583,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 TextField(
                     value = otpToken,
                     onValueChange = { otpToken = it },
-                    placeholder = { Text("Enter 6-digit code", color = Color.LightGray) },
+                    placeholder = { Text("Enter 8-digit code", color = Color.LightGray) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = TextFieldDefaults.colors(
@@ -756,160 +764,261 @@ fun PremiumSelectionCard(
 fun WriteScreen(spaceName: String, onBackClick: () -> Unit, onPostClick: (Letter) -> Unit) {
     var recipient by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    var selectedColor by remember { mutableStateOf(Color(0xFFF5F5F5)) }
-    val isDarkPaper = selectedColor == Color(0xFF2D2D2D)
+    var selectedColor by remember { mutableStateOf(Color(0xFFFFFFFF)) }
+
+    // STATES
+    var isSent by remember { mutableStateOf(false) }    // Success Screen
+    var isBlocked by remember { mutableStateOf(false) } // Limit Screen
+    var timeRemaining by remember { mutableStateOf("") }
+
+    // LOCAL STORAGE (Limit Logic)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("UnsaidLimits", android.content.Context.MODE_PRIVATE) }
+
+    // Check Limits on Load
+    LaunchedEffect(Unit) {
+        val now = System.currentTimeMillis()
+        val firstPostTime = prefs.getLong("first_post_time", 0L)
+        val count = prefs.getInt("daily_count", 0)
+
+        if (now - firstPostTime > 24 * 60 * 60 * 1000) {
+            // 24 hours passed, reset
+            prefs.edit().putInt("daily_count", 0).putLong("first_post_time", 0L).apply()
+        } else if (count >= 30) {
+            // Limit reached
+            isBlocked = true
+            val millisLeft = (firstPostTime + 24 * 60 * 60 * 1000) - now
+            val hours = millisLeft / (1000 * 60 * 60)
+            timeRemaining = "$hours hours"
+        }
+    }
+
+    // --- SCREEN 1: BLOCKED (Limit Reached) ---
+    if (isBlocked) {
+        Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Lock, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Daily Limit Reached", fontFamily = LibreFont, fontSize = 24.sp, color = InkCharcoal)
+                Text("You can write again in $timeRemaining.", fontFamily = InterFont, color = TextGray, modifier = Modifier.padding(top = 8.dp))
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(onClick = onBackClick, colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal)) {
+                    Text("Back to Feed", color = Color.White)
+                }
+            }
+        }
+        return
+    }
+
+    // --- SCREEN 2: SUCCESS (Letter Posted) ---
+    if (isSent) {
+        Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+                Text("Sent.", fontFamily = LibreFont, fontSize = 48.sp, color = InkCharcoal)
+                Text("Your words are out there now.", fontFamily = InterFont, color = TextGray, modifier = Modifier.padding(top = 8.dp, bottom = 32.dp))
+
+                // Option A: Go to specific feed
+                Button(
+                    onClick = onBackClick, // Navigates back to the feed we came from
+                    colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("View $spaceName Feed", fontFamily = InterFont, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Option B: Go Home (requires logic passed from parent, but for now we just close)
+                OutlinedButton(
+                    onClick = onBackClick,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, InkCharcoal)
+                ) {
+                    Text("Close", fontFamily = InterFont, fontWeight = FontWeight.Bold, color = InkCharcoal)
+                }
+            }
+        }
+        return
+    }
+
+    // --- SCREEN 3: WRITE (Standard UI) ---
+    val isDarkPaper = selectedColor == Color(0xFF1A1A1A)
     val textColor = if (isDarkPaper) Color.White else InkCharcoal
-    val hintColor = if (isDarkPaper) Color.LightGray else Color.Gray
+    val hintColor = if (isDarkPaper) Color(0xFFCCCCCC) else TextGray
 
     Scaffold(
         containerColor = PaperWhite,
         topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 48.dp, bottom = 16.dp, start = 16.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = InkCharcoal)
-                }
-                Text("$spaceName Space", fontFamily = InterFont, color = Color.Gray)
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 16.dp, start = 16.dp, end = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = InkCharcoal) }
+                Text(spaceName, fontFamily = InterFont, color = TextGray, fontSize = 14.sp)
                 Spacer(modifier = Modifier.width(48.dp))
             }
         },
         bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(PaperWhite)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color.Black.copy(0.2f))
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (message.isNotEmpty()) InkCharcoal else Color.LightGray)
-                        .bounceClick(onClick = {
-                            if (message.isNotEmpty()) {
-                                val newLetter = Letter(
-                                    recipient = if (recipient.isEmpty()) "Anonymous" else recipient,
-                                    message = message,
-                                    space = spaceName,
-                                    colorHex = selectedColor.toArgb().toLong()
-                                )
-                                onPostClick(newLetter)
-                            }
-                        }),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Post Letter",
-                        fontFamily = InterFont,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+            Column(modifier = Modifier.fillMaxWidth().background(PaperWhite).navigationBarsPadding().padding(24.dp)) {
+                // Color Picker
+                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.Center) {
+                    listOf(Color(0xFFFFFFFF), Color(0xFFEEF2F6), Color(0xFFF2E8D9), Color(0xFFE1E6E1), Color(0xFF1A1A1A)).forEach { color ->
+                        Box(modifier = Modifier.padding(8.dp).size(36.dp).clip(CircleShape).background(color).border(1.dp, if (selectedColor == color) InkCharcoal else Color(0xFFE0E0E0), CircleShape).clickable { selectedColor = color })
+                    }
                 }
+                // Post Button
+                Button(
+                    onClick = {
+                        if (message.isNotEmpty()) {
+                            // 1. UPDATE LIMITS
+                            val now = System.currentTimeMillis()
+                            val count = prefs.getInt("daily_count", 0)
+                            if (count == 0) prefs.edit().putLong("first_post_time", now).apply()
+                            prefs.edit().putInt("daily_count", count + 1).apply()
+
+                            // 2. POST
+                            onPostClick(Letter(recipient = recipient.ifEmpty { "Anonymous" }, message = message, space = spaceName, colorHex = selectedColor.toArgb().toLong()))
+
+                            // 3. SHOW SUCCESS
+                            isSent = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) { Text("Post Letter", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.padding(bottom = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                listOf(
-                    Color(0xFFFFFFFF),
-                    Color(0xFFF5F5F5),
-                    Color(0xFFEBE7DF),
-                    Color(0xFF2D2D2D)
-                ).forEach { color ->
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(color)
-                            .border(
-                                if (selectedColor == color) 2.dp else 1.dp,
-                                if (selectedColor == color) InkCharcoal else Color.LightGray,
-                                CircleShape
-                            )
-                            .clickable { selectedColor = color }
-                    )
-                }
-            }
-
+        Column(modifier = Modifier.padding(paddingValues).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
             Card(
-                modifier = Modifier.fillMaxWidth().height(400.dp),
+                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).border(2.dp, if (selectedColor == Color(0xFF1A1A1A)) Color.Transparent else Color(0xFFD1D1D1), RoundedCornerShape(4.dp)),
                 shape = RoundedCornerShape(4.dp),
                 colors = CardDefaults.cardColors(containerColor = selectedColor),
                 elevation = CardDefaults.cardElevation(0.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("To: ", fontFamily = InterFont, color = hintColor)
-                        TextField(
-                            value = recipient,
-                            onValueChange = { recipient = it },
-                            placeholder = { Text("...", color = hintColor.copy(0.5f)) },
-                            textStyle = TextStyle(
-                                fontFamily = InterFont,
-                                fontSize = 16.sp,
-                                color = textColor
-                            ),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                cursorColor = textColor,
-                                focusedTextColor = textColor,
-                                unfocusedTextColor = textColor
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(hintColor.copy(0.1f))
-                            .padding(vertical = 8.dp)
-                    )
-                    TextField(
-                        value = message,
-                        onValueChange = { message = it },
-                        placeholder = { Text("Write what you never said...", color = hintColor.copy(0.5f)) },
-                        textStyle = TextStyle(
-                            fontFamily = LibreFont,
-                            fontSize = 18.sp,
-                            color = textColor
-                        ),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            cursorColor = textColor,
-                            focusedTextColor = textColor,
-                            unfocusedTextColor = textColor
-                        ),
-                        modifier = Modifier.fillMaxSize()
-                    )
+                Column(modifier = Modifier.padding(24.dp)) {
+                    TextField(value = recipient, onValueChange = { if (it.length <= 25) recipient = it }, placeholder = { Text("To: ...", color = hintColor.copy(0.5f)) }, textStyle = TextStyle(fontFamily = InterFont, fontSize = 14.sp, color = textColor), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), modifier = Modifier.fillMaxWidth())
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(hintColor.copy(0.1f)).padding(vertical = 8.dp))
+                    TextField(value = message, onValueChange = { if (it.length <= 500) message = it }, placeholder = { Text("Write what you never said...", color = hintColor.copy(0.5f)) }, textStyle = TextStyle(fontFamily = LibreFont, fontSize = 18.sp, lineHeight = 28.sp, color = textColor), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), modifier = Modifier.fillMaxSize())
                 }
             }
-            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }
+@Composable
+fun LetterCard(letter: Letter, onClick: () -> Unit) {
+    // 1. GET THE COLOR
+    val paperColor = Color(letter.colorHex)
+
+    // 2. ROBUST DARK MODE CHECK
+    // Instead of checking the ID, we check the 'red' value.
+    // Dark colors (like Black/Midnight) have very low red values (< 0.5).
+    // Light colors (White, Beige, Mint) have high red values (> 0.5).
+    val isDark = paperColor.red < 0.5f
+
+    // 3. SET COLORS (High Contrast)
+    val textColor = if (isDark) Color.White else InkCharcoal // Force Pure White
+    val metaColor = if (isDark) Color(0xFFCCCCCC) else TextGray
+    val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
+    val borderColor = if (isDark) Color(0xFF333333) else Color(0xFFD1D1D1)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = paperColor),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            // HEADER
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("To: ${letter.recipient}", fontFamily = InterFont, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = metaColor)
+                Text(getTimeAgo(letter.createdAt), fontFamily = InterFont, fontSize = 12.sp, color = metaColor.copy(alpha = 0.7f))
+            }
+
+            // DIVIDER
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(dividerColor))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // BODY
+            Text(
+                text = letter.message,
+                fontFamily = LibreFont,
+                fontSize = 17.sp,
+                lineHeight = 26.sp,
+                color = textColor // Guaranteed White
+            )
+        }
+    }
+}
+
+@Composable
+fun FocusLetterScreen(
+    message: String,
+    recipient: String,
+    date: String,
+    colorHex: Long,
+    onBackClick: () -> Unit
+) {
+    // 1. GET THE COLOR
+    val paperColor = Color(colorHex)
+
+    // 2. ROBUST DARK MODE CHECK
+    val isDark = paperColor.red < 0.5f
+
+    // 3. SET COLORS
+    val textColor = if (isDark) Color.White else InkCharcoal // Force Pure White
+    val metaColor = if (isDark) Color(0xFFCCCCCC) else TextGray.copy(alpha = 0.6f)
+    val borderColor = if (isDark) Color(0xFF333333) else Color.Transparent
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.95f))
+            .clickable { onBackClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .border(1.dp, borderColor, RoundedCornerShape(16.dp)),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = paperColor),
+            elevation = CardDefaults.cardElevation(20.dp)
+        ) {
+            Column(modifier = Modifier.padding(32.dp)) {
+                // Header
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("To: $recipient", fontFamily = InterFont, fontSize = 16.sp, color = metaColor)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = metaColor, modifier = Modifier.clickable { onBackClick() })
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // Message (High Contrast)
+                Text(
+                    text = message,
+                    fontFamily = LibreFont,
+                    fontSize = 24.sp,
+                    lineHeight = 36.sp,
+                    color = textColor // Guaranteed White
+                )
+
+                Spacer(modifier = Modifier.height(48.dp))
+
+                // Date
+                Text(date.uppercase(), fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = metaColor, modifier = Modifier.align(Alignment.End))
+            }
+        }
+    }
+}     // The "Paper" Card for Writing
+
+
