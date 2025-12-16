@@ -1,6 +1,7 @@
 package com.example.unsaid
 
-import androidx.compose.ui.zIndex
+
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -19,11 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,18 +35,20 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.unsaid.ui.theme.InkCharcoal
-import com.example.unsaid.ui.theme.InterFont
-import com.example.unsaid.ui.theme.LibreFont
-import com.example.unsaid.ui.theme.PaperWhite
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.OtpType
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
@@ -59,20 +58,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import com.example.unsaid.ui.theme.InkCharcoal
+import com.example.unsaid.ui.theme.InterFont
+import com.example.unsaid.ui.theme.LibreFont
+import com.example.unsaid.ui.theme.PaperWhite
 
-// --- CONFIGURATION (PASTE YOUR KEYS HERE) ---
+// --- CONFIGURATION ---
 const val SUPABASE_URL = "https://ukgrxtvfcngbpktgrpin.supabase.co"
+// NOTE: For production, move this key to local.properties or BuildConfig
 const val SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ3J4dHZmY25nYnBrdGdycGluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MjA0MjAsImV4cCI6MjA4MTM5NjQyMH0.UUOs8evp09quy97Z5TUFSs5p3LWWvnyRzn2toGZPp7U"
 
-// --- SUPABASE CLIENT ---
 val supabase = createSupabaseClient(
     supabaseUrl = SUPABASE_URL,
     supabaseKey = SUPABASE_KEY
 ) {
     install(Postgrest)
+    install(Auth)
 }
 
-// --- DATA MODEL ---
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class Letter(
     val id: Long = 0,
@@ -83,11 +87,14 @@ data class Letter(
     @SerialName("created_at") val createdAt: String? = null
 )
 
+
 // --- ROUTES ---
 object Routes {
     const val SPLASH = "splash"
     const val WELCOME = "welcome"
     const val CHOOSE_SPACE = "choose_space"
+
+    const val CHOOSE_WRITE_SPACE = "choose_write_space"
     const val VERIFY = "verify"
     const val WRITE = "write"
     const val FEED_WITH_ARG = "feed/{spaceName}"
@@ -98,9 +105,16 @@ fun Modifier.bounceClick(scaleDown: Float = 0.95f, onClick: () -> Unit) = compos
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val view = LocalView.current
-    val scale by animateFloatAsState(if (isPressed) scaleDown else 1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-    LaunchedEffect(isPressed) { if (isPressed) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) }
-    this.graphicsLayer { scaleX = scale; scaleY = scale }.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+    val scale by animateFloatAsState(
+        if (isPressed) scaleDown else 1f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+    )
+    LaunchedEffect(isPressed) {
+        if (isPressed) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+    this
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
 }
 
 // --- HELPER: TIME AGO ---
@@ -110,7 +124,6 @@ fun getTimeAgo(isoString: String?): String {
         val instant = java.time.Instant.parse(isoString)
         val now = java.time.Instant.now()
         val diff = java.time.Duration.between(instant, now)
-
         return when {
             diff.toMinutes() < 1 -> "Just now"
             diff.toMinutes() < 60 -> "${diff.toMinutes()}m ago"
@@ -126,47 +139,85 @@ fun getTimeAgo(isoString: String?): String {
 @Composable
 fun UnsaidNavigation() {
     val navController = rememberNavController()
-
     NavHost(navController = navController, startDestination = Routes.SPLASH) {
-
         composable(Routes.SPLASH) {
-            SplashScreen { navController.navigate(Routes.WELCOME) { popUpTo(Routes.SPLASH) { inclusive = true } } }
+            SplashScreen {
+                navController.navigate(Routes.WELCOME) {
+                    popUpTo(Routes.SPLASH) { inclusive = true }
+                }
+            }
         }
 
         composable(Routes.WELCOME) {
             WelcomeScreen(
                 onReadClick = { navController.navigate(Routes.CHOOSE_SPACE) },
-                onWriteClick = { navController.navigate("${Routes.WRITE}/Global") }
+                onWriteClick = { navController.navigate(Routes.CHOOSE_WRITE_SPACE) }
             )
         }
 
         composable(Routes.CHOOSE_SPACE) {
             ChooseSpaceScreen(
                 onGlobalClick = { navController.navigate("feed/Global") },
-                onCollegeClick = { navController.navigate(Routes.VERIFY) },
+                onCollegeClick = {
+                    // --- THE FIX: SESSION CHECK ---
+                    val currentUser = supabase.auth.currentUserOrNull()
+
+                    if (currentUser != null) {
+                        // 1. User is already logged in -> Go straight to their feed
+                        val domain = currentUser.email?.substringAfter("@") ?: "college"
+                        navController.navigate("feed/$domain")
+                    } else {
+                        // 2. No user found -> Go to Verification
+                        navController.navigate(Routes.VERIFY)
+                    }
+                },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+        // --- NEW: CHOOSE SPACE FOR WRITING ---
+        composable(Routes.CHOOSE_WRITE_SPACE) {
+            ChooseSpaceScreen(
+                // 1. Global Button -> Goes to Write Global
+                onGlobalClick = { navController.navigate("${Routes.WRITE}/Global") },
+
+                // 2. College Button -> Check Login -> Go to Write College
+                onCollegeClick = {
+                    val currentUser = supabase.auth.currentUserOrNull()
+                    if (currentUser != null) {
+                        val domain = currentUser.email?.substringAfter("@") ?: "college"
+                        navController.navigate("${Routes.WRITE}/$domain")
+                    } else {
+                        // If not logged in, they must verify first.
+                        // (Note: After verifying, they will land on Feed, which is okay for now)
+                        navController.navigate(Routes.VERIFY)
+                    }
+                },
                 onBackClick = { navController.popBackStack() }
             )
         }
 
         composable(Routes.VERIFY) {
             VerificationScreen(
-                onVerificationSuccess = { navController.navigate("feed/College") { popUpTo(Routes.CHOOSE_SPACE) } },
+                onVerificationSuccess = {
+                    val userEmail = supabase.auth.currentUserOrNull()?.email ?: ""
+                    val domain = userEmail.substringAfter("@")
+                    navController.navigate("feed/$domain") {
+                        popUpTo(Routes.CHOOSE_SPACE)
+                    }
+                },
                 onBackClick = { navController.popBackStack() }
             )
         }
 
-        // FEED
         composable(
             route = Routes.FEED_WITH_ARG,
             arguments = listOf(navArgument("spaceName") { type = NavType.StringType })
         ) { backStackEntry ->
             val spaceName = backStackEntry.arguments?.getString("spaceName") ?: "Global"
-
             var letters by remember { mutableStateOf<List<Letter>>(emptyList()) }
             var isLoading by remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
 
-            // LOGIC: Fetch Letters
             val refreshLetters = {
                 isLoading = true
                 scope.launch(Dispatchers.IO) {
@@ -175,7 +226,7 @@ fun UnsaidNavigation() {
                             .select {
                                 filter { eq("space", spaceName) }
                                 order("created_at", Order.DESCENDING)
-                            }.decodeList<Letter>()
+                            }.decodeList()
                     } catch (e: Exception) {
                         println("Error: ${e.message}")
                     } finally {
@@ -184,10 +235,7 @@ fun UnsaidNavigation() {
                 }
             }
 
-            // Load on first open
-            LaunchedEffect(spaceName) {
-                refreshLetters()
-            }
+            LaunchedEffect(spaceName) { refreshLetters() }
 
             FeedScreen(
                 spaceName = spaceName,
@@ -199,7 +247,6 @@ fun UnsaidNavigation() {
             )
         }
 
-        // WRITE
         composable(
             route = "${Routes.WRITE}/{spaceName}",
             arguments = listOf(navArgument("spaceName") { type = NavType.StringType })
@@ -228,7 +275,6 @@ fun UnsaidNavigation() {
 }
 
 // --- SCREENS ---
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
@@ -241,32 +287,58 @@ fun FeedScreen(
 ) {
     Scaffold(
         containerColor = PaperWhite,
-        floatingActionButton = { FloatingActionButton(onClick = { onWriteClick() }, containerColor = InkCharcoal, contentColor = Color.White) { Icon(Icons.Default.Edit, contentDescription = "Write") } }
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { onWriteClick() },
+                containerColor = InkCharcoal,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = "Write")
+            }
+        }
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-
-            // Loading Bar at Top
             if (isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).zIndex(1f), color = InkCharcoal)
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).zIndex(1f),
+                    color = InkCharcoal
+                )
             }
 
-            LazyColumn(contentPadding = PaddingValues(top = 24.dp, start = 24.dp, end = 24.dp, bottom = 100.dp), modifier = Modifier.fillMaxSize()) {
-
-                // HEADER with Refresh Button
+            LazyColumn(
+                contentPadding = PaddingValues(top = 24.dp, start = 24.dp, end = 24.dp, bottom = 100.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // Back Button + Title
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onHeaderClick() }.padding(8.dp).offset(x = (-8).dp)) {
-                            Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.Gray, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = spaceName, fontFamily = InterFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
-                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onHeaderClick() }
+                                .padding(8.dp)
+                                .offset(x = (-8).dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(24.dp)
+                            )
 
-                        // NEW: Refresh Button
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = spaceName,
+                                fontFamily = InterFont,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = InkCharcoal
+                            )
+                        }
                         IconButton(onClick = onRefresh) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = InkCharcoal)
                         }
@@ -276,19 +348,44 @@ fun FeedScreen(
                 items(letters) { letter ->
                     val paperColor = Color(letter.colorHex)
                     val textColor = if (paperColor.toArgb() == Color(0xFF2D2D2D).toArgb()) Color.White else InkCharcoal
-                    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), shape = RoundedCornerShape(4.dp), colors = CardDefaults.cardColors(containerColor = paperColor), elevation = CardDefaults.cardElevation(0.dp)) {
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        colors = CardDefaults.cardColors(containerColor = paperColor),
+                        elevation = CardDefaults.cardElevation(0.dp)
+                    ) {
                         Column(modifier = Modifier.padding(20.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("To: ${letter.recipient}", fontFamily = InterFont, fontSize = 14.sp, color = textColor.copy(alpha = 0.7f))
-                                Text(text = getTimeAgo(letter.createdAt), fontFamily = InterFont, fontSize = 12.sp, color = textColor.copy(alpha = 0.4f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "To: ${letter.recipient}",
+                                    fontFamily = InterFont,
+                                    fontSize = 14.sp,
+                                    color = textColor.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = getTimeAgo(letter.createdAt),
+                                    fontFamily = InterFont,
+                                    fontSize = 12.sp,
+                                    color = textColor.copy(alpha = 0.4f)
+                                )
                             }
-                            Text(letter.message, fontFamily = LibreFont, fontSize = 16.sp, lineHeight = 24.sp, color = textColor)
+                            Text(
+                                letter.message,
+                                fontFamily = LibreFont,
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp,
+                                color = textColor
+                            )
                         }
                     }
                 }
             }
 
-            // Empty State
             if (letters.isEmpty() && !isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No letters yet.", fontFamily = InterFont, color = Color.Gray)
@@ -300,38 +397,118 @@ fun FeedScreen(
 
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
-    LaunchedEffect(Unit) { delay(2000); onTimeout() }
-    Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
+    LaunchedEffect(Unit) {
+        delay(2000)
+        onTimeout()
+    }
+    Box(
+        modifier = Modifier.fillMaxSize().background(PaperWhite),
+        contentAlignment = Alignment.Center
+    ) {
         Text("Unsaid.", color = InkCharcoal, fontSize = 32.sp, fontFamily = LibreFont)
     }
 }
 
 @Composable
 fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize().background(PaperWhite).padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            Text("Unsaid.", fontFamily = LibreFont, fontSize = 48.sp, color = InkCharcoal, modifier = Modifier.padding(bottom = 16.dp))
-            Text("For the words you never said.", fontFamily = InterFont, fontSize = 16.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 64.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(56.dp).shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color.Black.copy(0.1f)).clip(RoundedCornerShape(12.dp)).background(InkCharcoal).bounceClick(onClick = onReadClick), contentAlignment = Alignment.Center) {
-                Text("Read Letters", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    Box(
+        modifier = Modifier.fillMaxSize().background(PaperWhite).padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "Unsaid.",
+                fontFamily = LibreFont,
+                fontSize = 48.sp,
+                color = InkCharcoal,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Text(
+                "For the words you never said.",
+                fontFamily = InterFont,
+                fontSize = 16.sp,
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 64.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color.Black.copy(0.1f))
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(InkCharcoal)
+                    .bounceClick(onClick = onReadClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Read Letters",
+                    fontFamily = InterFont,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(56.dp).border(1.5.dp, InkCharcoal, RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).bounceClick(onClick = onWriteClick), contentAlignment = Alignment.Center) {
-                Text("Write a Letter", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .border(1.5.dp, InkCharcoal, RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(12.dp))
+                    .bounceClick(onClick = onWriteClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Write a Letter",
+                    fontFamily = InterFont,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkCharcoal
+                )
             }
         }
-        Text("Anonymous. Forever.", fontFamily = InterFont, fontSize = 12.sp, color = Color.LightGray, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp))
+        Text(
+            "Anonymous. Forever.",
+            fontFamily = InterFont,
+            fontSize = 12.sp,
+            color = Color.LightGray,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp)
+        )
     }
 }
 
 @Composable
-fun ChooseSpaceScreen(onGlobalClick: () -> Unit, onCollegeClick: () -> Unit, onBackClick: () -> Unit) {
+fun ChooseSpaceScreen(
+    onGlobalClick: () -> Unit,
+    onCollegeClick: () -> Unit,
+    onBackClick: () -> Unit
+) {
     Scaffold(
         containerColor = PaperWhite,
-        topBar = { IconButton(onClick = onBackClick, modifier = Modifier.padding(top = 48.dp, start = 16.dp)) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = InkCharcoal) } }
+        topBar = {
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.padding(top = 48.dp, start = 16.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = InkCharcoal)
+            }
+        }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Choose Space", fontFamily = InterFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, modifier = Modifier.padding(bottom = 48.dp))
+        Column(
+            modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Choose Space",
+                fontFamily = InterFont,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = InkCharcoal,
+                modifier = Modifier.padding(bottom = 48.dp)
+            )
             PremiumSelectionCard("Global", "Visible to everyone", Icons.Default.Home, onGlobalClick)
             Spacer(modifier = Modifier.height(16.dp))
             PremiumSelectionCard("College", "Visible only within your college", Icons.Default.Person, onCollegeClick)
@@ -343,39 +520,232 @@ fun ChooseSpaceScreen(onGlobalClick: () -> Unit, onCollegeClick: () -> Unit, onB
 @Composable
 fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Unit) {
     var email by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+    var otpToken by remember { mutableStateOf("") }
+    var verificationState by remember { mutableStateOf(0) } // 0: Input, 1: Loading, 2: OTP
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // List of public domains to BLOCK
+    val publicDomains = listOf(
+        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+        "live.com", "icloud.com", "aol.com", "protonmail.com"
+    )
 
     Scaffold(
         containerColor = PaperWhite,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            IconButton(onClick = onBackClick, modifier = Modifier.padding(top = 48.dp, start = 16.dp)) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = InkCharcoal)
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.padding(top = 48.dp, start = 16.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = InkCharcoal)
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("College Verification", fontFamily = InterFont, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, modifier = Modifier.padding(bottom = 16.dp))
-            Text("Verify your college email to access the college space.", fontFamily = InterFont, fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 32.dp))
-            Text("College Email", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkCharcoal, modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp))
-            TextField(value = email, onValueChange = { email = it }, placeholder = { Text("you@college.edu", color = Color.LightGray) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), colors = TextFieldDefaults.colors(focusedContainerColor = Color.White, unfocusedContainerColor = Color.White, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp)))
-            Spacer(modifier = Modifier.height(24.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(12.dp)).background(if (email.isNotEmpty()) InkCharcoal else Color.LightGray).bounceClick { if (email.isNotEmpty() && !isLoading) { isLoading = true; scope.launch { delay(2000); isLoading = false; onVerificationSuccess() } } }, contentAlignment = Alignment.Center) {
-                if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp)) else Text("Send Verification Link", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Column(
+            modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "College/Work Verification",
+                fontFamily = InterFont,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = InkCharcoal,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            if (verificationState == 2) {
+                // STATE 2: OTP ENTRY
+                Text(
+                    "Check your inbox!",
+                    fontFamily = InterFont,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkCharcoal
+                )
+                Text(
+                    "Code sent to $email",
+                    fontFamily = InterFont,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(32.dp))
+                TextField(
+                    value = otpToken,
+                    onValueChange = { otpToken = it },
+                    placeholder = { Text("Enter 6-digit code", color = Color.LightGray) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = {
+                        if (otpToken.length == 8) {
+                            scope.launch {
+                                try {
+                                    supabase.auth.verifyEmailOtp(
+                                        type = OtpType.Email.EMAIL,
+                                        email = email,
+                                        token = otpToken
+                                    )
+                                    onVerificationSuccess()
+                                } catch (e: Exception) {
+                                    snackbarHostState.showSnackbar("Invalid code. Try again.")
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) {
+                    Text(
+                        "Verify Code",
+                        color = Color.White,
+                        fontFamily = InterFont,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                // STATE 1: EMAIL ENTRY
+                Text(
+                    "Use your official work or college email. Public emails (Gmail, Yahoo, etc.) are not allowed.",
+                    fontFamily = InterFont,
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 32.dp)
+                )
+                Text(
+                    "Official Email",
+                    fontFamily = InterFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = InkCharcoal,
+                    modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
+                )
+                TextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    placeholder = { Text("student@college.edu", color = Color.LightGray) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (email.isNotEmpty()) InkCharcoal else Color.LightGray)
+                        .bounceClick {
+                            if (email.isNotEmpty() && verificationState == 0) {
+                                // --- SECURITY CHECK: Block Public Domains ---
+                                val domain = email.substringAfter("@", "").lowercase()
+                                if (publicDomains.contains(domain) || domain.isEmpty()) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            "Public emails not allowed. Use work/college email."
+                                        )
+                                    }
+                                    return@bounceClick
+                                }
+
+                                // Check passed: Send OTP
+                                verificationState = 1
+                                scope.launch {
+                                    try {
+                                        supabase.auth.signInWith(OTP) {
+                                            this.email = email
+                                        }
+                                        verificationState = 2
+                                    } catch(e: Exception) {
+                                        verificationState = 0
+                                        snackbarHostState.showSnackbar("Error: ${e.message}")
+                                    }
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (verificationState == 1) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text(
+                            "Send Verification Link",
+                            fontFamily = InterFont,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun PremiumSelectionCard(title: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth().height(120.dp).shadow(4.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.05f)).clip(RoundedCornerShape(16.dp)).background(Color.White).border(1.dp, Color(0xFFF0F0F0), RoundedCornerShape(16.dp)).bounceClick(onClick = onClick).padding(24.dp)) {
+fun PremiumSelectionCard(
+    title: String,
+    description: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .shadow(4.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.05f))
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .border(1.dp, Color(0xFFF0F0F0), RoundedCornerShape(16.dp))
+            .bounceClick(onClick = onClick)
+            .padding(24.dp)
+    ) {
         Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(PaperWhite), contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = InkCharcoal) }
+            Box(
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(PaperWhite),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = InkCharcoal)
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column {
-                Text(title, fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = InkCharcoal)
-                Text(description, fontFamily = InterFont, fontSize = 14.sp, color = Color.Gray)
+                Text(
+                    title,
+                    fontFamily = InterFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = InkCharcoal
+                )
+                Text(
+                    description,
+                    fontFamily = InterFont,
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
             }
         }
     }
@@ -394,39 +764,149 @@ fun WriteScreen(spaceName: String, onBackClick: () -> Unit, onPostClick: (Letter
     Scaffold(
         containerColor = PaperWhite,
         topBar = {
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 16.dp, start = 16.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = onBackClick) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = InkCharcoal) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 48.dp, bottom = 16.dp, start = 16.dp, end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(onClick = onBackClick) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = InkCharcoal)
+                }
                 Text("$spaceName Space", fontFamily = InterFont, color = Color.Gray)
                 Spacer(modifier = Modifier.width(48.dp))
             }
         },
         bottomBar = {
-            Box(modifier = Modifier.fillMaxWidth().background(PaperWhite).navigationBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp)) {
-                Box(modifier = Modifier.fillMaxWidth().height(56.dp).shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color.Black.copy(0.2f)).clip(RoundedCornerShape(12.dp)).background(if (message.isNotEmpty()) InkCharcoal else Color.LightGray).bounceClick(onClick = {
-                    if (message.isNotEmpty()) {
-                        val newLetter = Letter(recipient = if (recipient.isEmpty()) "Anonymous" else recipient, message = message, space = spaceName, colorHex = selectedColor.toArgb().toLong())
-                        onPostClick(newLetter)
-                    }
-                }), contentAlignment = Alignment.Center) {
-                    Text("Post Letter", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(PaperWhite)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color.Black.copy(0.2f))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (message.isNotEmpty()) InkCharcoal else Color.LightGray)
+                        .bounceClick(onClick = {
+                            if (message.isNotEmpty()) {
+                                val newLetter = Letter(
+                                    recipient = if (recipient.isEmpty()) "Anonymous" else recipient,
+                                    message = message,
+                                    space = spaceName,
+                                    colorHex = selectedColor.toArgb().toLong()
+                                )
+                                onPostClick(newLetter)
+                            }
+                        }),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Post Letter",
+                        fontFamily = InterFont,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
             }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(modifier = Modifier.padding(bottom = 32.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf(Color(0xFFFFFFFF), Color(0xFFF5F5F5), Color(0xFFEBE7DF), Color(0xFF2D2D2D)).forEach { color ->
-                    Box(modifier = Modifier.size(40.dp).clip(CircleShape).background(color).border(if (selectedColor == color) 2.dp else 1.dp, if (selectedColor == color) InkCharcoal else Color.LightGray, CircleShape).clickable { selectedColor = color })
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                listOf(
+                    Color(0xFFFFFFFF),
+                    Color(0xFFF5F5F5),
+                    Color(0xFFEBE7DF),
+                    Color(0xFF2D2D2D)
+                ).forEach { color ->
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .border(
+                                if (selectedColor == color) 2.dp else 1.dp,
+                                if (selectedColor == color) InkCharcoal else Color.LightGray,
+                                CircleShape
+                            )
+                            .clickable { selectedColor = color }
+                    )
                 }
             }
-            Card(modifier = Modifier.fillMaxWidth().height(400.dp), shape = RoundedCornerShape(4.dp), colors = CardDefaults.cardColors(containerColor = selectedColor), elevation = CardDefaults.cardElevation(0.dp)) {
+
+            Card(
+                modifier = Modifier.fillMaxWidth().height(400.dp),
+                shape = RoundedCornerShape(4.dp),
+                colors = CardDefaults.cardColors(containerColor = selectedColor),
+                elevation = CardDefaults.cardElevation(0.dp)
+            ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("To: ", fontFamily = InterFont, color = hintColor)
-                        TextField(value = recipient, onValueChange = { recipient = it }, placeholder = { Text("...", color = hintColor.copy(0.5f)) }, textStyle = TextStyle(fontFamily = InterFont, fontSize = 16.sp, color = textColor), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = textColor, focusedTextColor = textColor, unfocusedTextColor = textColor), modifier = Modifier.fillMaxWidth())
+                        TextField(
+                            value = recipient,
+                            onValueChange = { recipient = it },
+                            placeholder = { Text("...", color = hintColor.copy(0.5f)) },
+                            textStyle = TextStyle(
+                                fontFamily = InterFont,
+                                fontSize = 16.sp,
+                                color = textColor
+                            ),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = textColor,
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(hintColor.copy(0.1f)).padding(vertical = 8.dp))
-                    TextField(value = message, onValueChange = { message = it }, placeholder = { Text("Write what you never said...", color = hintColor.copy(0.5f)) }, textStyle = TextStyle(fontFamily = LibreFont, fontSize = 18.sp, color = textColor), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = textColor, focusedTextColor = textColor, unfocusedTextColor = textColor), modifier = Modifier.fillMaxSize())
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(hintColor.copy(0.1f))
+                            .padding(vertical = 8.dp)
+                    )
+                    TextField(
+                        value = message,
+                        onValueChange = { message = it },
+                        placeholder = { Text("Write what you never said...", color = hintColor.copy(0.5f)) },
+                        textStyle = TextStyle(
+                            fontFamily = LibreFont,
+                            fontSize = 18.sp,
+                            color = textColor
+                        ),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            cursorColor = textColor,
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor
+                        ),
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(100.dp))
