@@ -1019,6 +1019,6 @@ fun FocusLetterScreen(
             }
         }
     }
-}     // The "Paper" Card for Writing
+}
 
 
