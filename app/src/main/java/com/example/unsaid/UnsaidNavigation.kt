@@ -1,5 +1,9 @@
 package com.example.unsaid
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
@@ -514,64 +518,258 @@ fun SplashScreen(onTimeout: () -> Unit) {
         Text("Unsaid.", color = InkCharcoal, fontSize = 48.sp, fontFamily = LibreFont, fontWeight = FontWeight.Bold, letterSpacing = (-2).sp)
     }
 }
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize().background(PaperWhite).padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                "Unsaid.",
-                fontFamily = LibreFont,
-                fontSize = 48.sp,
-                color = InkCharcoal,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            // UPDATED SUBTITLE
-            Text(
-                "For the words you never said out loud.",
-                fontFamily = InterFont,
-                fontSize = 16.sp,
-                color = Color.Gray,
-                modifier = Modifier.padding(bottom = 64.dp),
-                textAlign = TextAlign.Center
-            )
+    // 1. GET STORAGE
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("unsaid_prefs", android.content.Context.MODE_PRIVATE) }
 
-            // BUTTONS
+    // 2. CHECK IF SEEN BEFORE
+    // If "onboarding_complete" is true, showOnboarding becomes false.
+    var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_complete", false)) }
+
+    Box(modifier = Modifier.fillMaxSize().background(PaperWhite)) {
+
+        // --- 1. THE MAIN MENU (Visible if Onboarding is Done) ---
+        AnimatedVisibility(
+            visible = !showOnboarding,
+            enter = fadeIn(animationSpec = tween(1000)),
+            exit = fadeOut()
+        ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = Color.Black.copy(0.1f))
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(InkCharcoal)
-                    .bounceClick(onClick = onReadClick),
+                    .fillMaxSize()
+                    .background(PaperWhite),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Read Letters", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .border(1.5.dp, InkCharcoal, RoundedCornerShape(12.dp))
-                    .clip(RoundedCornerShape(12.dp))
-                    .bounceClick(onClick = onWriteClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Write a Letter", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
+                        .offset(y = (-40).dp)
+                ) {
+                    Text(
+                        "Unsaid.",
+                        fontFamily = LibreFont,
+                        fontSize = 56.sp,
+                        fontWeight = FontWeight.Black,
+                        color = InkCharcoal,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        "What's on your mind?",
+                        fontFamily = InterFont,
+                        fontSize = 18.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 48.dp)
+                    )
+
+                    // READ CARD
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .graphicsLayer { rotationZ = -4f }
+                            .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f))
+                            .background(Color(0xFF4DB6AC), RoundedCornerShape(16.dp))
+                            .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(16.dp))
+                            .bounceClick(onClick = onReadClick)
+                            .padding(24.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Email, // Fixed Icon
+                                contentDescription = null,
+                                tint = InkCharcoal,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                "READ what the world has to say...",
+                                fontFamily = LibreFont,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = InkCharcoal,
+                                lineHeight = 30.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height((-20).dp))
+
+                    // WRITE CARD
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.95f)
+                            .height(160.dp)
+                            .graphicsLayer { rotationZ = 3f }
+                            .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f))
+                            .background(Color(0xFFFFE082), RoundedCornerShape(16.dp))
+                            .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(16.dp))
+                            .bounceClick(onClick = onWriteClick)
+                            .padding(24.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = InkCharcoal,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                "Drop a letter, share your UNSAID...",
+                                fontFamily = LibreFont,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = InkCharcoal,
+                                lineHeight = 30.sp
+                            )
+                        }
+                    }
+                }
             }
         }
-        // Footer REMOVED
+
+        // --- 2. THE ONBOARDING OVERLAY (Visible only FIRST TIME) ---
+        AnimatedVisibility(
+            visible = showOnboarding,
+            enter = fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+        ) {
+            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 3 })
+            val coroutineScope = rememberCoroutineScope()
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                androidx.compose.foundation.pager.HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                ) { page ->
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        // Dynamic Card Visual
+                        val rotation = when(page) { 0 -> -5f; 1 -> 5f; else -> 0f }
+                        val color = when(page) { 0 -> AppPalette[24]; 1 -> AppPalette[29]; else -> AppPalette[20] }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.8f)
+                                .aspectRatio(0.8f)
+                                .graphicsLayer { rotationZ = rotation }
+                                .shadow(16.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.2f))
+                                .background(color, RoundedCornerShape(16.dp))
+                                .border(3.dp, Color.Black, RoundedCornerShape(16.dp))
+                                .padding(16.dp)
+                        ) {
+                            // Fake Card Content
+                            Column {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Box(modifier = Modifier.width(60.dp).height(8.dp).background(Color.Black.copy(0.1f), CircleShape))
+                                    Icon(Icons.Default.Email, contentDescription = null, tint = Color.Black.copy(0.2f))
+                                }
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color.Black.copy(0.1f), CircleShape))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Box(modifier = Modifier.fillMaxWidth(0.8f).height(8.dp).background(Color.Black.copy(0.1f), CircleShape))
+                                Spacer(modifier = Modifier.weight(1f))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Box(modifier = Modifier.width(30.dp).height(6.dp).background(Color.Black.copy(0.1f), CircleShape))
+                                    Box(modifier = Modifier.width(30.dp).height(6.dp).background(Color.Black.copy(0.1f), CircleShape))
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(48.dp))
+
+                        val title = when(page) {
+                            0 -> "Everyone has something they never said."
+                            1 -> "Here, you can say it without being judged."
+                            else -> "Write anonymously. Share with the world."
+                        }
+                        val subtitle = when(page) {
+                            0 -> "A secret, a confession, or just a thought."
+                            1 -> "No names. No profiles. Just raw words."
+                            else -> "Or confess specifically within your college."
+                        }
+
+                        Text(
+                            text = title,
+                            fontFamily = LibreFont,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 36.sp,
+                            color = InkCharcoal
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = subtitle,
+                            fontFamily = LibreFont,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            color = InkCharcoal,
+                            lineHeight = 30.sp
+                        )
+                    }
+                }
+
+                // Footer Navigation
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Indicators
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        repeat(3) { index ->
+                            val isSelected = pagerState.currentPage == index
+                            val width by animateDpAsState(if (isSelected) 24.dp else 8.dp)
+                            val color = if (isSelected) InkCharcoal else Color.LightGray
+                            Box(modifier = Modifier.height(8.dp).width(width).clip(CircleShape).background(color))
+                        }
+                    }
+
+                    // Next / Get Started Button
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(InkCharcoal)
+                            .clickable {
+                                coroutineScope.launch {
+                                    if (pagerState.currentPage < 2) {
+                                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                    } else {
+                                        // 3. SAVE TO STORAGE & CLOSE
+                                        prefs.edit().putBoolean("onboarding_complete", true).apply()
+                                        showOnboarding = false
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = if (pagerState.currentPage == 2) "Get Started" else "Next",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = InterFont
+                        )
+                    }
+                }
+            }
+        }
     }
 }
-
 @Composable
 fun ChooseSpaceScreen(
     onGlobalClick: () -> Unit,
@@ -579,7 +777,7 @@ fun ChooseSpaceScreen(
     onBackClick: () -> Unit
 ) {
     Scaffold(
-        containerColor = PaperWhite,
+        containerColor = Color(0xFFFAFAFA), // Paper White
         topBar = {
             IconButton(
                 onClick = onBackClick,
@@ -590,20 +788,54 @@ fun ChooseSpaceScreen(
         }
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp),
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // --- HEADER ---
             Text(
-                "Choose Space",
-                fontFamily = InterFont,
-                fontSize = 18.sp,
+                "Choose a Space",
+                fontFamily = LibreFont,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
-                color = InkCharcoal,
-                modifier = Modifier.padding(bottom = 48.dp)
+                color = InkCharcoal
             )
-            PremiumSelectionCard("Global", "Visible to everyone", Icons.Default.Home, onGlobalClick)
-            Spacer(modifier = Modifier.height(16.dp))
-            PremiumSelectionCard("College", "Visible only within your college", Icons.Default.Person, onCollegeClick)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                "A space to speak freely, completely anonymous.",
+                fontFamily = InterFont,
+                fontSize = 16.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // --- GLOBAL CARD ---
+            PremiumSelectionCard(
+                title = "Global",
+                description = "Letter archive for the world.",
+                icon = Icons.Default.Home, // Represents the "Home" of the internet
+                onClick = onGlobalClick,
+                color = Color(0xFFE3F2FD) // Soft Blue Circle
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- COLLEGE CARD ---
+            PremiumSelectionCard(
+                title = "College",
+                description = "Anonymous confessions, exclusively for your college.",
+                icon = Icons.Default.Person, // Represents "You/Your Community"
+                onClick = onCollegeClick,
+                color = Color(0xFFE8F5E9) // Soft Green Circle
+            )
         }
     }
 }
@@ -624,7 +856,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
     )
 
     Scaffold(
-        containerColor = PaperWhite,
+        containerColor = Color(0xFFFAFAFA), // Paper White
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             IconButton(
@@ -636,38 +868,99 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
         }
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).fillMaxSize().padding(24.dp),
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
+            // --- HEADER ---
+            Spacer(modifier = Modifier.height(20.dp))
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.05f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock, // Lock Icon
+                    contentDescription = null,
+                    tint = InkCharcoal,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             Text(
-                "College/Work Verification",
-                fontFamily = InterFont,
-                fontSize = 24.sp,
+                "Unlock Your Campus",
+                fontFamily = LibreFont, // Premium Serif
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = InkCharcoal,
-                modifier = Modifier.padding(bottom = 16.dp)
+                textAlign = TextAlign.Center
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                "To ensure this space remains exclusive to students, we need to verify you belong here.",
+                fontFamily = InterFont,
+                fontSize = 16.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center,
+                lineHeight = 24.sp
+            )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // --- THE PRIVACY PLEDGE CARD ---
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)), // Soft Green
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFC8E6C9), RoundedCornerShape(12.dp))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            "100% Anonymous",
+                            fontFamily = InterFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF2E7D32)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Your email is used ONLY for verification. It is never displayed, shared, or linked to your letters.",
+                            fontFamily = InterFont,
+                            fontSize = 13.sp,
+                            color = Color(0xFF1B5E20),
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // --- INPUT FIELDS ---
             if (verificationState == 2) {
-                // STATE 2: OTP ENTRY
-                Text(
-                    "Check your inbox!",
-                    fontFamily = InterFont,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = InkCharcoal
-                )
-                Text(
-                    "Code sent to $email",
-                    fontFamily = InterFont,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(32.dp))
+                // STATE 2: OTP
+                Text("Check your inbox for the code!", fontFamily = InterFont, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
+
                 TextField(
                     value = otpToken,
                     onValueChange = { otpToken = it },
-                    placeholder = { Text("Enter 8-digit code", color = Color.LightGray) },
+                    placeholder = { Text("Enter 6-digit code") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = TextFieldDefaults.colors(
@@ -676,15 +969,15 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                    modifier = Modifier.fillMaxWidth().border(2.dp, InkCharcoal, RoundedCornerShape(12.dp)), // Retro Border
+                    shape = RoundedCornerShape(12.dp)
                 )
+
                 Spacer(modifier = Modifier.height(24.dp))
+
                 Button(
                     onClick = {
-                        if (otpToken.length == 8) {
+                        if (otpToken.length >= 6) {
                             scope.launch {
                                 try {
                                     supabase.auth.verifyEmailOtp(
@@ -703,22 +996,11 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(56.dp)
                 ) {
-                    Text(
-                        "Verify Code",
-                        color = Color.White,
-                        fontFamily = InterFont,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("Verify & Enter", color = Color.White, fontWeight = FontWeight.Bold)
                 }
+
             } else {
-                // STATE 1: EMAIL ENTRY
-                Text(
-                    "Use your official work or college email. Public emails (Gmail, Yahoo, etc.) are not allowed.",
-                    fontFamily = InterFont,
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(bottom = 32.dp)
-                )
+                // STATE 1: EMAIL
                 Text(
                     "Official Email",
                     fontFamily = InterFont,
@@ -727,10 +1009,11 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                     color = InkCharcoal,
                     modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
                 )
+
                 TextField(
                     value = email,
                     onValueChange = { email = it },
-                    placeholder = { Text("student@college.edu", color = Color.LightGray) },
+                    placeholder = { Text("student@srmist.edu.in", color = Color.Gray) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     colors = TextFieldDefaults.colors(
@@ -739,58 +1022,43 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(12.dp))
+                    modifier = Modifier.fillMaxWidth().border(2.dp, InkCharcoal, RoundedCornerShape(12.dp)), // Retro Border
+                    shape = RoundedCornerShape(12.dp)
                 )
-                Spacer(modifier = Modifier.height(24.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (email.isNotEmpty()) InkCharcoal else Color.LightGray)
-                        .bounceClick {
-                            if (email.isNotEmpty() && verificationState == 0) {
-                                // --- SECURITY CHECK: Block Public Domains ---
-                                val domain = email.substringAfter("@", "").lowercase()
-                                if (publicDomains.contains(domain) || domain.isEmpty()) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "Public emails not allowed. Use work/college email."
-                                        )
-                                    }
-                                    return@bounceClick
-                                }
 
-                                // Check passed: Send OTP
-                                verificationState = 1
-                                scope.launch {
-                                    try {
-                                        supabase.auth.signInWith(OTP) {
-                                            this.email = email
-                                        }
-                                        verificationState = 2
-                                    } catch(e: Exception) {
-                                        verificationState = 0
-                                        snackbarHostState.showSnackbar("Error: ${e.message}")
-                                    }
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        if (email.isNotEmpty() && verificationState == 0) {
+                            // BLOCK PUBLIC DOMAINS
+                            val domain = email.substringAfter("@", "").lowercase()
+                            if (publicDomains.contains(domain) || domain.isEmpty()) {
+                                scope.launch { snackbarHostState.showSnackbar("Please use your college email (not Gmail).") }
+                                return@Button
+                            }
+
+                            // SEND OTP
+                            verificationState = 1
+                            scope.launch {
+                                try {
+                                    supabase.auth.signInWith(OTP) { this.email = email }
+                                    verificationState = 2
+                                } catch(e: Exception) {
+                                    verificationState = 0
+                                    snackbarHostState.showSnackbar("Error: ${e.message}")
                                 }
                             }
-                        },
-                    contentAlignment = Alignment.Center
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
                 ) {
                     if (verificationState == 1) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                     } else {
-                        Text(
-                            "Send Verification Link",
-                            fontFamily = InterFont,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        Text("Send Secure Link", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -803,40 +1071,58 @@ fun PremiumSelectionCard(
     title: String,
     description: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    color: Color
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp)
-            .shadow(4.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.05f))
+            // RETRO STYLE: Thick Border + Shadow
+            .shadow(8.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.1f))
             .clip(RoundedCornerShape(16.dp))
             .background(Color.White)
-            .border(1.dp, Color(0xFFF0F0F0), RoundedCornerShape(16.dp))
+            .border(2.dp, InkCharcoal, RoundedCornerShape(16.dp)) // <--- The Retro Border
             .bounceClick(onClick = onClick)
             .padding(24.dp)
     ) {
-        Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon Container
             Box(
-                modifier = Modifier.size(48.dp).clip(CircleShape).background(PaperWhite),
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(color),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = InkCharcoal)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = InkCharcoal,
+                    modifier = Modifier.size(28.dp)
+                )
             }
-            Spacer(modifier = Modifier.width(16.dp))
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            // Text Content
             Column {
                 Text(
-                    title,
-                    fontFamily = InterFont,
+                    text = title,
+                    fontFamily = LibreFont,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
                     color = InkCharcoal
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    description,
+                    text = description,
                     fontFamily = InterFont,
-                    fontSize = 14.sp,
-                    color = Color.Gray
+                    fontSize = 13.sp,
+                    color = Color.Gray,
+                    lineHeight = 18.sp
                 )
             }
         }
