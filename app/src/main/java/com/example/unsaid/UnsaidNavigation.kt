@@ -1,5 +1,12 @@
 package com.example.unsaid
 
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.graphics.luminance // To check for dark colors automatically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.view.HapticFeedbackConstants
@@ -66,7 +73,15 @@ import com.example.unsaid.ui.theme.PaperWhite
 // --- THEME DEFINITIONS ---
 val TextGray = Color(0xFF666666)
 val Graphite = Color(0xFF202020) // Premium Soft Black
-
+// --- NEW PALETTE ---
+val AppPalette = listOf(
+    Color(0xFFFFFFFF), Color(0xFFE0E0E0), Color(0xFFD1D1D1), Color(0xFF333333), Color(0xFFFDD835), Color(0xFFFBC02D),
+    Color(0xFFBCAAA4), Color(0xFF795548), Color(0xFFFFF9C4), Color(0xFFFFE082), Color(0xFFF8BBD0), Color(0xFFF48FB1),
+    Color(0xFFE1BEE7), Color(0xFFCE93D8), Color(0xFFBBDEFB), Color(0xFFC8E6C9), Color(0xFF81C784), Color(0xFFAED581),
+    Color(0xFFCDDC39), Color(0xFFDCEDC8), Color(0xFF5C6BC0), Color(0xFF3949AB), Color(0xFF7986CB), Color(0xFF3F51B5),
+    Color(0xFFD32F2F), Color(0xFFC62828), Color(0xFFD84315), Color(0xFFEF6C00), Color(0xFF4DB6AC), Color(0xFF66BB6A),
+    Color(0xFF558B2F), Color(0xFF2E7D32), Color(0xFF9575CD), Color(0xFFAD1457), Color(0xFF673AB7), Color(0xFFFFF59D)
+)
 
 // --- CONFIGURATION ---
 const val SUPABASE_URL = "https://ukgrxtvfcngbpktgrpin.supabase.co"
@@ -98,7 +113,9 @@ data class Letter(
     val message: String,
     val space: String,
     @SerialName("color_hex") val colorHex: Long,
-    @SerialName("created_at") val createdAt: String? = null
+    @SerialName("created_at") val createdAt: String? = null,
+    val reports: Int = 0,
+    @SerialName("is_hidden") val isHidden: Boolean = false
 )
 
 
@@ -108,7 +125,8 @@ object Routes {
     const val WELCOME = "welcome"
     const val CHOOSE_SPACE = "choose_space"
 
-    const val FOCUS = "focus/{message}/{recipient}/{date}/{color}"
+
+    const val FOCUS = "focus/{id}/{message}/{recipient}/{date}/{color}/{reports}"
 
     const val CHOOSE_WRITE_SPACE = "choose_write_space"
     const val VERIFY = "verify"
@@ -214,24 +232,30 @@ fun UnsaidNavigation() {
         composable(
             route = Routes.FOCUS,
             arguments = listOf(
+                navArgument("id") { type = NavType.LongType }, // <--- NEW
                 navArgument("message") { type = NavType.StringType },
                 navArgument("recipient") { type = NavType.StringType },
                 navArgument("date") { type = NavType.StringType },
-                navArgument("color") { type = NavType.LongType }
+                navArgument("color") { type = NavType.LongType },
+                navArgument("reports") { type = NavType.IntType } // <--- NEW
             )
         ) { backStackEntry ->
-            // This extracts the data passed from the feed
+            // Extract the new data
+            val id = backStackEntry.arguments?.getLong("id") ?: 0L
             val msg = backStackEntry.arguments?.getString("message") ?: ""
             val rec = backStackEntry.arguments?.getString("recipient") ?: ""
             val date = backStackEntry.arguments?.getString("date") ?: ""
             val col = backStackEntry.arguments?.getLong("color") ?: 0xFFFFFFFF
+            val rep = backStackEntry.arguments?.getInt("reports") ?: 0
 
-            // And shows the full screen letter
+            // Pass it to the screen (Fixes the Red Error)
             FocusLetterScreen(
+                letterId = id,
                 message = msg,
                 recipient = rec,
                 date = date,
                 colorHex = col,
+                currentReports = rep,
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -264,7 +288,9 @@ fun UnsaidNavigation() {
                     try {
                         letters = supabase.from("letters")
                             .select {
-                                filter { eq("space", spaceName) }
+                                filter { eq("space", spaceName)
+                                    eq("is_hidden", false)
+                                }
                                 order("created_at", Order.DESCENDING)
                             }.decodeList()
                     } catch (e: Exception) {
@@ -289,7 +315,8 @@ fun UnsaidNavigation() {
                     val encodedMsg = android.net.Uri.encode(letter.message)
                     val encodedRec = android.net.Uri.encode(letter.recipient)
                     val encodedDate = android.net.Uri.encode(getTimeAgo(letter.createdAt))
-                    navController.navigate("focus/$encodedMsg/$encodedRec/$encodedDate/${letter.colorHex}")
+                    // We now pass ID and Reports in the URL
+                    navController.navigate("focus/${letter.id}/$encodedMsg/$encodedRec/$encodedDate/${letter.colorHex}/${letter.reports}")
                 }
             )
         }
@@ -321,7 +348,6 @@ fun UnsaidNavigation() {
     }
 }
 
-// --- SCREENS ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
@@ -333,12 +359,23 @@ fun FeedScreen(
     onRefresh: () -> Unit,
     onLetterClick: (Letter) -> Unit
 ) {
+    // --- SEARCH STATES ---
+    var isSearchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // --- FILTER LOGIC (RECIPIENT ONLY) ---
+    val filteredLetters = remember(searchQuery, letters) {
+        if (searchQuery.isEmpty()) letters else letters.filter {
+            it.recipient.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
     Scaffold(
-        containerColor = PaperWhite,
+        containerColor = Color(0xFFFAFAFA),
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { onWriteClick() },
-                containerColor = InkCharcoal,
+                containerColor = Color.Black,
                 contentColor = Color.White
             ) {
                 Icon(Icons.Default.Edit, contentDescription = "Write")
@@ -346,70 +383,117 @@ fun FeedScreen(
         }
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            if (isLoading) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).zIndex(1f),
-                    color = InkCharcoal
-                )
-            }
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
 
-            LazyColumn(
-                contentPadding = PaddingValues(top = 24.dp, start = 24.dp, end = 24.dp, bottom = 100.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                // --- HEADER AREA ---
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp), // Removed .height(48.dp) to prevent cutting text
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (isSearchActive) {
+                        // --- SEARCH MODE ---
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search To: Name...", fontFamily = InterFont, fontSize = 16.sp) }, // Increased font size slightly
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            textStyle = TextStyle(fontFamily = InterFont, fontSize = 16.sp, color = Color.Black),
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(2.dp, Color.Black, RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp)), // Clip prevents background spill
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray)
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    isSearchActive = false
+                                    searchQuery = ""
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Black)
+                                }
+                            }
+                        )
+                    } else {
+                        // --- NORMAL TITLE MODE ---
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { onHeaderClick() }
-                                .padding(8.dp)
-                                .offset(x = (-8).dp)
+                                .padding(end = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color.Gray,
+                                tint = Color.Black,
                                 modifier = Modifier.size(24.dp)
                             )
-
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = spaceName,
                                 fontFamily = InterFont,
-                                fontSize = 18.sp,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = InkCharcoal
+                                color = Color.Black
                             )
                         }
-                        IconButton(onClick = onRefresh) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = InkCharcoal)
+
+                        Row {
+                            IconButton(onClick = { isSearchActive = true }) {
+                                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Black)
+                            }
+                            IconButton(onClick = onRefresh) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.Black)
+                            }
                         }
                     }
                 }
 
-                // This is the clean loop. Copy ONLY this.
-                items(letters) { letter ->
-                    LetterCard(letter) {
-                        onLetterClick(letter)
+                if (isLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color.Black)
+                }
+
+                // --- MASONRY GRID ---
+                LazyVerticalStaggeredGrid(
+                    columns = StaggeredGridCells.Fixed(2),
+                    verticalItemSpacing = 8.dp,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 100.dp)
+                ) {
+                    items(filteredLetters) { letter ->
+                        LetterCard(
+                            recipient = letter.recipient,
+                            message = letter.message,
+                            colorHex = letter.colorHex,
+                            onClick = { onLetterClick(letter) }
+                        )
                     }
                 }
-                }
-            }
 
-            if (letters.isEmpty() && !isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No letters yet.", fontFamily = InterFont, color = Color.Gray)
+                // Empty State
+                if (filteredLetters.isEmpty() && !isLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (searchQuery.isNotEmpty()) "No one found with that name." else "No letters yet.",
+                            fontFamily = InterFont,
+                            color = Color.Gray
+                        )
+                    }
                 }
             }
         }
     }
-
+}
 
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
@@ -762,260 +846,397 @@ fun PremiumSelectionCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WriteScreen(spaceName: String, onBackClick: () -> Unit, onPostClick: (Letter) -> Unit) {
+    // 1. INPUT STATES
     var recipient by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    var selectedColor by remember { mutableStateOf(Color(0xFFFFFFFF)) }
+    var selectedColor by remember { mutableStateOf(AppPalette[4]) }
 
-    // STATES
-    var isSent by remember { mutableStateOf(false) }    // Success Screen
-    var isBlocked by remember { mutableStateOf(false) } // Limit Screen
-    var timeRemaining by remember { mutableStateOf("") }
-
-    // LOCAL STORAGE (Limit Logic)
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val prefs = remember { context.getSharedPreferences("UnsaidLimits", android.content.Context.MODE_PRIVATE) }
-
-    // Check Limits on Load
-    LaunchedEffect(Unit) {
-        val now = System.currentTimeMillis()
-        val firstPostTime = prefs.getLong("first_post_time", 0L)
-        val count = prefs.getInt("daily_count", 0)
-
-        if (now - firstPostTime > 24 * 60 * 60 * 1000) {
-            // 24 hours passed, reset
-            prefs.edit().putInt("daily_count", 0).putLong("first_post_time", 0L).apply()
-        } else if (count >= 30) {
-            // Limit reached
-            isBlocked = true
-            val millisLeft = (firstPostTime + 24 * 60 * 60 * 1000) - now
-            val hours = millisLeft / (1000 * 60 * 60)
-            timeRemaining = "$hours hours"
-        }
-    }
-
-    // --- SCREEN 1: BLOCKED (Limit Reached) ---
-    if (isBlocked) {
-        Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Lock, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(48.dp))
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Daily Limit Reached", fontFamily = LibreFont, fontSize = 24.sp, color = InkCharcoal)
-                Text("You can write again in $timeRemaining.", fontFamily = InterFont, color = TextGray, modifier = Modifier.padding(top = 8.dp))
-                Spacer(modifier = Modifier.height(32.dp))
-                Button(onClick = onBackClick, colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal)) {
-                    Text("Back to Feed", color = Color.White)
-                }
-            }
-        }
-        return
-    }
-
-    // --- SCREEN 2: SUCCESS (Letter Posted) ---
-    if (isSent) {
-        Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
-                Text("Sent.", fontFamily = LibreFont, fontSize = 48.sp, color = InkCharcoal)
-                Text("Your words are out there now.", fontFamily = InterFont, color = TextGray, modifier = Modifier.padding(top = 8.dp, bottom = 32.dp))
-
-                // Option A: Go to specific feed
-                Button(
-                    onClick = onBackClick, // Navigates back to the feed we came from
-                    colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("View $spaceName Feed", fontFamily = InterFont, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Option B: Go Home (requires logic passed from parent, but for now we just close)
-                OutlinedButton(
-                    onClick = onBackClick,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, InkCharcoal)
-                ) {
-                    Text("Close", fontFamily = InterFont, fontWeight = FontWeight.Bold, color = InkCharcoal)
-                }
-            }
-        }
-        return
-    }
-
-    // --- SCREEN 3: WRITE (Standard UI) ---
-    val isDarkPaper = selectedColor == Color(0xFF1A1A1A)
-    val textColor = if (isDarkPaper) Color.White else InkCharcoal
-    val hintColor = if (isDarkPaper) Color(0xFFCCCCCC) else TextGray
+    // 2. SAFETY STATES
+    var isChecked by remember { mutableStateOf(false) }
+    var showGuidelines by remember { mutableStateOf(false) }
 
     Scaffold(
-        containerColor = PaperWhite,
+        containerColor = Color(0xFFFAFAFA),
         topBar = {
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 16.dp, start = 16.dp, end = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = InkCharcoal) }
-                Text(spaceName, fontFamily = InterFont, color = TextGray, fontSize = 14.sp)
-                Spacer(modifier = Modifier.width(48.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                Text(spaceName, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp))
             }
         },
         bottomBar = {
-            Column(modifier = Modifier.fillMaxWidth().background(PaperWhite).navigationBarsPadding().padding(24.dp)) {
-                // Color Picker
-                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp), horizontalArrangement = Arrangement.Center) {
-                    listOf(Color(0xFFFFFFFF), Color(0xFFEEF2F6), Color(0xFFF2E8D9), Color(0xFFE1E6E1), Color(0xFF1A1A1A)).forEach { color ->
-                        Box(modifier = Modifier.padding(8.dp).size(36.dp).clip(CircleShape).background(color).border(1.dp, if (selectedColor == color) InkCharcoal else Color(0xFFE0E0E0), CircleShape).clickable { selectedColor = color })
+            // CHECKBOX + BUTTON (Unchanged)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFAFAFA))
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { isChecked = !isChecked },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isChecked,
+                        onCheckedChange = { isChecked = it },
+                        colors = CheckboxDefaults.colors(checkedColor = Color.Black)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("I agree to the Community Guidelines", fontFamily = InterFont, fontSize = 12.sp, color = Color.Black)
+                        Text("Read Rules", fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Blue, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline, modifier = Modifier.clickable { showGuidelines = true })
                     }
                 }
-                // Post Button
                 Button(
                     onClick = {
-                        if (message.isNotEmpty()) {
-                            // 1. UPDATE LIMITS
-                            val now = System.currentTimeMillis()
-                            val count = prefs.getInt("daily_count", 0)
-                            if (count == 0) prefs.edit().putLong("first_post_time", now).apply()
-                            prefs.edit().putInt("daily_count", count + 1).apply()
-
-                            // 2. POST
-                            onPostClick(Letter(recipient = recipient.ifEmpty { "Anonymous" }, message = message, space = spaceName, colorHex = selectedColor.toArgb().toLong()))
-
-                            // 3. SHOW SUCCESS
-                            isSent = true
+                        if (message.isNotEmpty() && isChecked) {
+                            onPostClick(Letter(
+                                recipient = recipient.ifEmpty { "Anonymous" },
+                                message = message,
+                                space = spaceName,
+                                colorHex = selectedColor.toArgb().toLong(),
+                                reports = 0,
+                                isHidden = false
+                            ))
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isChecked) Color.Black else Color.LightGray),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(56.dp)
-                ) { Text("Post Letter", fontFamily = InterFont, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                ) {
+                    Text("Submit Your Message", color = Color.White, fontWeight = FontWeight.Bold)
+                }
             }
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
-            Card(
-                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).border(2.dp, if (selectedColor == Color(0xFF1A1A1A)) Color.Transparent else Color(0xFFD1D1D1), RoundedCornerShape(4.dp)),
-                shape = RoundedCornerShape(4.dp),
-                colors = CardDefaults.cardColors(containerColor = selectedColor),
-                elevation = CardDefaults.cardElevation(0.dp)
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text("Choose a Color", fontFamily = LibreFont, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp).align(Alignment.CenterHorizontally))
+
+            // --- COMPACT COLOR GRID ---
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 40.dp),
+                modifier = Modifier.height(190.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                userScrollEnabled = false
             ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    TextField(value = recipient, onValueChange = { if (it.length <= 25) recipient = it }, placeholder = { Text("To: ...", color = hintColor.copy(0.5f)) }, textStyle = TextStyle(fontFamily = InterFont, fontSize = 14.sp, color = textColor), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), modifier = Modifier.fillMaxWidth())
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(hintColor.copy(0.1f)).padding(vertical = 8.dp))
-                    TextField(value = message, onValueChange = { if (it.length <= 500) message = it }, placeholder = { Text("Write what you never said...", color = hintColor.copy(0.5f)) }, textStyle = TextStyle(fontFamily = LibreFont, fontSize = 18.sp, lineHeight = 28.sp, color = textColor), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent), modifier = Modifier.fillMaxSize())
+                items(AppPalette) { color ->
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(color)
+                            .border(
+                                width = if (selectedColor == color) 2.dp else 1.dp,
+                                color = if (selectedColor == color) Color.Black else Color.LightGray,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { selectedColor = color }
+                    )
                 }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- EXPANDED LETTER CARD ---
+            val paperColor = selectedColor
+            val isDark = paperColor.luminance() < 0.5f
+            val inkColor = if (isDark) Color.White else Color.Black
+            val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(2.dp, Color.Black, RoundedCornerShape(8.dp)),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = paperColor)
+            ) {
+                Column {
+                    // Header
+                    Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("To: ", fontFamily = LibreFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = inkColor)
+                        TextField(
+                            value = recipient,
+                            onValueChange = { if (it.length <= 25) recipient = it },
+                            placeholder = { Text("Enter Name", color = inkColor.copy(0.5f), fontFamily = LibreFont) },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = inkColor, focusedTextColor = inkColor, unfocusedTextColor = inkColor
+                            ),
+                            textStyle = TextStyle(fontSize = 18.sp, fontFamily = LibreFont)
+                        )
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
+
+                    // Body - WITH LIMIT & COUNTER
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        TextField(
+                            value = message,
+                            onValueChange = {
+                                if (it.length <= 150) message = it // <--- LIMIT SET TO 150
+                            },
+                            placeholder = { Text("Type Your Message Here...", color = inkColor.copy(0.5f), fontFamily = LibreFont) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(350.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = inkColor, focusedTextColor = inkColor, unfocusedTextColor = inkColor
+                            ),
+                            textStyle = TextStyle(fontSize = 20.sp, fontFamily = LibreFont, lineHeight = 30.sp)
+                        )
+
+                        // CHARACTER COUNTER
+                        Text(
+                            text = "${message.length} / 150",
+                            fontFamily = InterFont,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = inkColor.copy(0.5f),
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp)
+                        )
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
+
+                    // Footer
+                    Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("SEND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
+                        Text("#unsaid", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
+                        Text("BACK", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // Popup logic (Unchanged)
+    if (showGuidelines) {
+        AlertDialog(
+            onDismissRequest = { showGuidelines = false },
+            containerColor = Color.White,
+            title = { Text("Community Guidelines", fontFamily = InterFont, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("1. No Bullying: Don't attack specific people.", fontSize = 14.sp, fontFamily = InterFont)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("2. No Hate Speech: Zero tolerance for racism/sexism.", fontSize = 14.sp, fontFamily = InterFont)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("3. No Doxing: Do not share private phone numbers.", fontSize = 14.sp, fontFamily = InterFont)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("4. Safety: Threats of violence will be reported.", fontSize = 14.sp, fontFamily = InterFont)
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showGuidelines = false; isChecked = true }, colors = ButtonDefaults.buttonColors(containerColor = Color.Black)) {
+                    Text("I Understand")
+                }
+            }
+        )
     }
 }
 @Composable
-fun LetterCard(letter: Letter, onClick: () -> Unit) {
-    // 1. GET THE COLOR
-    val paperColor = Color(letter.colorHex)
-
-    // 2. ROBUST DARK MODE CHECK
-    // Instead of checking the ID, we check the 'red' value.
-    // Dark colors (like Black/Midnight) have very low red values (< 0.5).
-    // Light colors (White, Beige, Mint) have high red values (> 0.5).
-    val isDark = paperColor.red < 0.5f
-
-    // 3. SET COLORS (High Contrast)
-    val textColor = if (isDark) Color.White else InkCharcoal // Force Pure White
-    val metaColor = if (isDark) Color(0xFFCCCCCC) else TextGray
-    val dividerColor = if (isDark) Color(0xFF333333) else Color(0xFFE0E0E0)
-    val borderColor = if (isDark) Color(0xFF333333) else Color(0xFFD1D1D1)
+fun LetterCard(
+    recipient: String,
+    message: String,
+    colorHex: Long,
+    onClick: () -> Unit = {}
+) {
+    val paperColor = Color(colorHex)
+    // Auto-detect text color based on brightness (Luminance)
+    // If background is dark (< 0.5), text is White. Else, Black.
+    val isDark = paperColor.luminance() < 0.5f
+    val inkColor = if (isDark) Color.White else Color.Black
+    val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 12.dp)
-            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
+            .padding(4.dp) // Spacing between grid items
+            .border(2.dp, Color.Black, RoundedCornerShape(8.dp)) // THICK BLACK BORDER
             .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = paperColor),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            // HEADER
+        Column {
+            // --- HEADER ---
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("To: ${letter.recipient}", fontFamily = InterFont, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = metaColor)
-                Text(getTimeAgo(letter.createdAt), fontFamily = InterFont, fontSize = 12.sp, color = metaColor.copy(alpha = 0.7f))
+                Text(
+                    text = "To: $recipient",
+                    fontFamily = InterFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = inkColor,
+                    maxLines = 1
+                )
+                Icon(
+                    imageVector = Icons.Default.Email, // Envelope Icon
+                    contentDescription = null,
+                    tint = inkColor,
+                    modifier = Modifier.size(16.dp)
+                )
             }
 
-            // DIVIDER
-            Spacer(modifier = Modifier.height(12.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(dividerColor))
-            Spacer(modifier = Modifier.height(16.dp))
+            // DIVIDER LINE
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
 
-            // BODY
+            // --- BODY ---
             Text(
-                text = letter.message,
-                fontFamily = LibreFont,
-                fontSize = 17.sp,
-                lineHeight = 26.sp,
-                color = textColor // Guaranteed White
+                text = message,
+                fontFamily = InterFont, // Or LibreFont if you prefer serif
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = inkColor,
+                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                minLines = 3 // Ensures cards have some height even if empty
             )
+
+            // DIVIDER LINE
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
+
+            // --- FOOTER ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("SEND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
+                Text("#unsaid", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
+                Text("BACK", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
+            }
         }
     }
 }
 
 @Composable
 fun FocusLetterScreen(
+    letterId: Long, // <--- CHANGED: We need ID to report
     message: String,
     recipient: String,
     date: String,
     colorHex: Long,
+    currentReports: Int, // <--- NEW: Need current count
     onBackClick: () -> Unit
 ) {
-    // 1. GET THE COLOR
+    // 1. COLORS
     val paperColor = Color(colorHex)
+    val isDark = paperColor.luminance() < 0.5f
+    val inkColor = if (isDark) Color.White else Color.Black
+    val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
 
-    // 2. ROBUST DARK MODE CHECK
-    val isDark = paperColor.red < 0.5f
-
-    // 3. SET COLORS
-    val textColor = if (isDark) Color.White else InkCharcoal // Force Pure White
-    val metaColor = if (isDark) Color(0xFFCCCCCC) else TextGray.copy(alpha = 0.6f)
-    val borderColor = if (isDark) Color(0xFF333333) else Color.Transparent
+    // 2. REPORT STATE
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Check if this device already reported this specific letter
+    val prefs = remember { context.getSharedPreferences("reported_letters", android.content.Context.MODE_PRIVATE) }
+    var hasReported by remember { mutableStateOf(prefs.getBoolean("reported_$letterId", false)) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.95f))
+            .background(Color.Black.copy(alpha = 0.9f))
             .clickable { onBackClick() },
         contentAlignment = Alignment.Center
     ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.9f)
-                .border(1.dp, borderColor, RoundedCornerShape(16.dp)),
-            shape = RoundedCornerShape(16.dp),
+                .border(2.dp, Color.Black, RoundedCornerShape(12.dp))
+                .clickable(enabled = false) {},
+            shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = paperColor),
-            elevation = CardDefaults.cardElevation(20.dp)
+            elevation = CardDefaults.cardElevation(10.dp)
         ) {
-            Column(modifier = Modifier.padding(32.dp)) {
-                // Header
-                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Text("To: $recipient", fontFamily = InterFont, fontSize = 16.sp, color = metaColor)
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = metaColor, modifier = Modifier.clickable { onBackClick() })
+            Column {
+                // HEADER
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("To: $recipient", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = inkColor)
+                    Icon(Icons.Default.Email, contentDescription = null, tint = inkColor, modifier = Modifier.size(20.dp))
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
 
-                // Message (High Contrast)
-                Text(
-                    text = message,
-                    fontFamily = LibreFont,
-                    fontSize = 24.sp,
-                    lineHeight = 36.sp,
-                    color = textColor // Guaranteed White
-                )
+                // BODY
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 200.dp, max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp)
+                ) {
+                    Text(message, fontFamily = LibreFont, fontSize = 22.sp, lineHeight = 32.sp, color = inkColor)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(date.uppercase(), fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(alpha = 0.5f), modifier = Modifier.align(Alignment.End))
+                }
 
-                Spacer(modifier = Modifier.height(48.dp))
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
 
-                // Date
-                Text(date.uppercase(), fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = metaColor, modifier = Modifier.align(Alignment.End))
+                // FOOTER (With Report Button)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // REPORT BUTTON
+                    // REPORT BUTTON (Fixed Visibility)
+                    Text(
+                        text = if (hasReported) "REPORTED" else "REPORT",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        // FIX: Use 'inkColor' so it matches the high-contrast theme (White/Black)
+                        // If reported, we dim it slightly.
+                        color = if (hasReported) inkColor.copy(alpha = 0.5f) else inkColor,
+                        modifier = Modifier.clickable {
+                            if (!hasReported) {
+                                hasReported = true
+                                prefs.edit().putBoolean("reported_$letterId", true).apply()
+
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val newCount = currentReports + 1
+                                        val shouldHide = newCount >= 5
+                                        // Update Supabase
+                                        supabase.from("letters").update({
+                                            set("reports", newCount)
+                                            set("is_hidden", shouldHide)
+                                        }) {
+                                            filter { eq("id", letterId) }
+                                        }
+                                    } catch (e: Exception) {
+                                        println("Report error: ${e.message}")
+                                    }
+                                }
+                            }
+                        }
+                    )
+
+                    Text("#unsaid", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
+
+                    Text("BACK", fontSize = 12.sp, fontWeight = FontWeight.Black, color = inkColor, modifier = Modifier.clickable { onBackClick() })
+                }
             }
         }
     }
