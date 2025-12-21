@@ -87,14 +87,10 @@ val AppPalette = listOf(
     Color(0xFF558B2F), Color(0xFF2E7D32), Color(0xFF9575CD), Color(0xFFAD1457), Color(0xFF673AB7), Color(0xFFFFF59D)
 )
 
-// --- CONFIGURATION ---
-const val SUPABASE_URL = "https://ukgrxtvfcngbpktgrpin.supabase.co"
-// NOTE: For production, move this key to local.properties or BuildConfig
-const val SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrZ3J4dHZmY25nYnBrdGdycGluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MjA0MjAsImV4cCI6MjA4MTM5NjQyMH0.UUOs8evp09quy97Z5TUFSs5p3LWWvnyRzn2toGZPp7U"
 
 val supabase = createSupabaseClient(
-    supabaseUrl = SUPABASE_URL,
-    supabaseKey = SUPABASE_KEY
+    supabaseUrl = BuildConfig.SUPABASE_URL, // <--- Reads from hidden file
+    supabaseKey = BuildConfig.SUPABASE_KEY
 ) {
     install(Postgrest)
     install(Auth) {
