@@ -107,16 +107,9 @@ val supabase = createSupabaseClient(
 ) {
     install(Postgrest)
     install(Auth) {
-        // DISABLE Persistence: Session is lost when app closes
-        // (Note: In a real production app, you might want a "Remember Me" checkbox,
-        // but this achieves exactly what you asked for: auto-logout on close).
-        // If the library doesn't support 'alwaysSessionSave = false' easily,
-        // we force logout on App Start instead.
+
     }
 }
-// FORCE LOGOUT ON START: Add this to your Main Activity or top of Navigation
-// A cleaner way for "Logout on Close" without complex config:
-// We will simply NOT check for a session at startup in the UI logic.
 
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
@@ -823,7 +816,7 @@ fun ChooseSpaceScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text(
-                "A space to speak freely, completely anonymous.",
+                "Where do you want to speak?",
                 fontFamily = InterFont,
                 fontSize = 16.sp,
                 color = Color.Gray,
@@ -832,24 +825,26 @@ fun ChooseSpaceScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // --- GLOBAL CARD ---
-            PremiumSelectionCard(
-                title = "Global",
-                description = "Letter archive for the world.",
-                icon = Icons.Default.Home, // Represents the "Home" of the internet
-                onClick = onGlobalClick,
-                color = Color(0xFFE3F2FD) // Soft Blue Circle
+            // --- GLOBAL CARD (Colorful & Tilted) ---
+            ColorfulSpaceCard(
+                title = "Global Feed",
+                description = "The world's archive. Read letters from everywhere.",
+                icon = Icons.Default.Home,
+                color = Color(0xFFFFE082), // Amber/Yellow
+                rotation = -3f, // Tilted Left
+                onClick = onGlobalClick
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // --- COLLEGE CARD ---
-            PremiumSelectionCard(
-                title = "College",
-                description = "Anonymous confessions, exclusively for your college.",
-                icon = Icons.Default.Person, // Represents "You/Your Community"
-                onClick = onCollegeClick,
-                color = Color(0xFFE8F5E9) // Soft Green Circle
+            // --- COLLEGE CARD (Colorful & Tilted) ---
+            ColorfulSpaceCard(
+                title = "College Feed",
+                description = "Anonymous confessions.Exclusive to your college.",
+                icon = Icons.Default.Person,
+                color = Color(0xFF81D4FA), // Light Blue
+                rotation = 3f, // Tilted Right
+                onClick = onCollegeClick
             )
         }
     }
@@ -985,7 +980,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 TextField(
                     value = otpToken,
                     onValueChange = { otpToken = it },
-                    placeholder = { Text("Enter 6-digit code") },
+                    placeholder = { Text("Enter 8-digit code") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = TextFieldDefaults.colors(
@@ -1159,7 +1154,7 @@ fun PremiumSelectionCard(
 fun WriteScreen(
     spaceName: String,
     onNavigateBack: () -> Unit,
-    onTermsClick: () -> Unit // <--- New parameter for the Terms Screen
+    onTermsClick: () -> Unit
 ) {
     // 1. INPUT STATES
     var recipient by remember { mutableStateOf("") }
@@ -1168,15 +1163,19 @@ fun WriteScreen(
 
     // 2. SAFETY & UI STATES
     var isChecked by remember { mutableStateOf(false) }
-    var isSending by remember { mutableStateOf(false) }     // Loading State
-    var showThankYou by remember { mutableStateOf(false) }  // Success State
+    var isSending by remember { mutableStateOf(false) }
+    var showThankYou by remember { mutableStateOf(false) }
 
+    // 3. SYSTEM TOOLS (Required for Limit)
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("unsaid_prefs", android.content.Context.MODE_PRIVATE) }
 
-    // 3. AUTO-NAVIGATE AFTER SUCCESS
+    // 4. AUTO-NAVIGATE AFTER SUCCESS
     LaunchedEffect(showThankYou) {
         if (showThankYou) {
-            delay(2000) // Wait 2 seconds so they can see the "Thank You"
+            delay(2000)
             onNavigateBack()
         }
     }
@@ -1184,6 +1183,7 @@ fun WriteScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = Color(0xFFFAFAFA),
+            snackbarHost = { SnackbarHost(snackbarHostState) }, // <--- Shows "Limit Reached" error
             topBar = {
                 Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onNavigateBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
@@ -1210,7 +1210,6 @@ fun WriteScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text("I agree to the Community Guidelines", fontFamily = InterFont, fontSize = 12.sp, color = Color.Black)
-                            // --- THE NEW LEGAL LINK ---
                             Text(
                                 "Read Terms & Policy",
                                 fontFamily = InterFont,
@@ -1218,14 +1217,31 @@ fun WriteScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.Blue,
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                                modifier = Modifier.clickable { onTermsClick() } // <--- Navigates to the new page
+                                modifier = Modifier.clickable { onTermsClick() }
                             )
                         }
                     }
                     Button(
                         onClick = {
                             if (message.isNotEmpty() && isChecked && !isSending) {
-                                isSending = true // Start Loading
+                                // --- DAILY LIMIT CHECK ---
+                                val today = java.time.LocalDate.now().toString()
+                                val lastDate = prefs.getString("last_post_date", "")
+                                var dailyCount = prefs.getInt("daily_post_count", 0)
+
+                                if (lastDate != today) {
+                                    dailyCount = 0
+                                }
+
+                                if (dailyCount >= 3) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Daily limit reached (3/3). Come back tomorrow!")
+                                    }
+                                    return@Button
+                                }
+                                // -------------------------
+
+                                isSending = true
                                 scope.launch(Dispatchers.IO) {
                                     try {
                                         val newLetter = Letter(
@@ -1238,14 +1254,19 @@ fun WriteScreen(
                                         )
                                         supabase.from("letters").insert(newLetter)
 
-                                        // On Success: Show Thank You
                                         withContext(Dispatchers.Main) {
+                                            // SAVE NEW COUNT
+                                            prefs.edit()
+                                                .putString("last_post_date", today)
+                                                .putInt("daily_post_count", dailyCount + 1)
+                                                .apply()
+
                                             isSending = false
                                             showThankYou = true
                                         }
                                     } catch(e: Exception) {
-                                        println("Error uploading: ${e.message}")
                                         isSending = false
+                                        scope.launch { snackbarHostState.showSnackbar("Error sending letter. Try again.") }
                                     }
                                 }
                             }
@@ -1263,6 +1284,8 @@ fun WriteScreen(
                 }
             }
         ) { paddingValues ->
+            // ... (The rest of the UI code for Colors and Card stays the same)
+            // To save space, just keep the existing UI code below inside the Scaffold content
             Column(
                 modifier = Modifier
                     .padding(paddingValues)
@@ -1272,7 +1295,6 @@ fun WriteScreen(
             ) {
                 Text("Choose a Color", fontFamily = LibreFont, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp).align(Alignment.CenterHorizontally))
 
-                // --- COMPACT COLOR GRID ---
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 40.dp),
                     modifier = Modifier.height(190.dp),
@@ -1298,7 +1320,6 @@ fun WriteScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // --- EXPANDED LETTER CARD ---
                 val paperColor = selectedColor
                 val isDark = paperColor.luminance() < 0.5f
                 val inkColor = if (isDark) Color.White else Color.Black
@@ -1312,7 +1333,6 @@ fun WriteScreen(
                     colors = CardDefaults.cardColors(containerColor = paperColor)
                 ) {
                     Column {
-                        // Header
                         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("To: ", fontFamily = LibreFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = inkColor)
                             TextField(
@@ -1330,7 +1350,6 @@ fun WriteScreen(
 
                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
 
-                        // Body - WITH LIMIT & COUNTER
                         Box(modifier = Modifier.fillMaxWidth()) {
                             TextField(
                                 value = message,
@@ -1349,7 +1368,6 @@ fun WriteScreen(
                                 textStyle = TextStyle(fontSize = 20.sp, fontFamily = LibreFont, lineHeight = 30.sp)
                             )
 
-                            // CHARACTER COUNTER
                             Text(
                                 text = "${message.length} / 150",
                                 fontFamily = InterFont,
@@ -1364,7 +1382,6 @@ fun WriteScreen(
 
                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
 
-                        // Footer
                         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("SEND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
                             Text("#unsaid", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
@@ -1376,7 +1393,6 @@ fun WriteScreen(
             }
         }
 
-        // --- THANK YOU OVERLAY (Z-Index is higher) ---
         AnimatedVisibility(
             visible = showThankYou,
             enter = fadeIn(),
@@ -1387,7 +1403,7 @@ fun WriteScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(PaperWhite.copy(alpha = 0.95f))
-                    .clickable(enabled = false) {}, // Blocks clicks behind it
+                    .clickable(enabled = false) {},
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1851,7 +1867,68 @@ fun LegalSection(title: String, body: String) {
         )
     }
 }
+@Composable
+fun ColorfulSpaceCard(
+    title: String,
+    description: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    rotation: Float,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .graphicsLayer { rotationZ = rotation } // The "Physical" Tilt
+            .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f))
+            .background(color, RoundedCornerShape(16.dp))
+            .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp)) // The "Unsaid" Thick Border
+            .clip(RoundedCornerShape(16.dp))
+            .bounceClick(onClick = onClick)
+            .padding(24.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Icon in a Circle
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(0.1f)), // Subtle dark circle
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = InkCharcoal,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
 
+            Spacer(modifier = Modifier.width(20.dp))
+
+            // Text
+            Column {
+                Text(
+                    text = title,
+                    fontFamily = LibreFont, // Serif for the "Newspaper" vibe
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = InkCharcoal
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = description,
+                    fontFamily = InterFont,
+                    fontSize = 14.sp,
+                    color = InkCharcoal.copy(0.7f), // Dark gray for readability
+                    lineHeight = 18.sp
+                )
+            }
+        }
+    }
+}
 
 
 
