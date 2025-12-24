@@ -1,4 +1,4 @@
-package com.example.unsaid.ui.theme
+package com.abhishek.unsaid.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.example.unsaid.R
+import com.abhishek.unsaid.R
 
 // 1. Define the Font Families
 val InterFont = FontFamily(

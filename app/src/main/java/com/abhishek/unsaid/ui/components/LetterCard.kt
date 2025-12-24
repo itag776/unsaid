@@ -1,4 +1,4 @@
-package com.example.unsaid.ui.components
+package com.abhishek.unsaid.ui.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,9 +13,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.unsaid.ui.theme.InkCharcoal
-import com.example.unsaid.ui.theme.InterFont
-import com.example.unsaid.ui.theme.LibreFont
+import com.abhishek.unsaid.ui.theme.InkCharcoal
+import com.abhishek.unsaid.ui.theme.InterFont
+import com.abhishek.unsaid.ui.theme.LibreFont
 
 @Composable
 fun LetterCard(

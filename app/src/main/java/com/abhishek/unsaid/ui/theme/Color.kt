@@ -1,4 +1,4 @@
-package com.example.unsaid.ui.theme
+package com.abhishek.unsaid.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

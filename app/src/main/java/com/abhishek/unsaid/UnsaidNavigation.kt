@@ -1,5 +1,6 @@
-package com.example.unsaid
+package com.abhishek.unsaid
 
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -23,7 +24,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.ui.graphics.luminance // To check for dark colors automatically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Spring
@@ -35,8 +35,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,7 +59,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -81,10 +78,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import com.example.unsaid.ui.theme.InkCharcoal
-import com.example.unsaid.ui.theme.InterFont
-import com.example.unsaid.ui.theme.LibreFont
-import com.example.unsaid.ui.theme.PaperWhite
+import com.abhishek.unsaid.ui.theme.InkCharcoal
+import com.abhishek.unsaid.ui.theme.InterFont
+import com.abhishek.unsaid.ui.theme.LibreFont
+import com.abhishek.unsaid.ui.theme.PaperWhite
 import io.github.jan.supabase.postgrest.postgrest
 
 // --- THEME DEFINITIONS ---
@@ -850,23 +847,35 @@ fun ChooseSpaceScreen(
     }
 }
 
+// COMPLETE REPLACEMENT for VerificationScreen
+// Replace the entire VerificationScreen composable (starting around line 470)
+
+// COMPLETE REPLACEMENT for VerificationScreen
+// Replace the entire VerificationScreen composable (starting around line 470)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Unit) {
+    // --- STATE MANAGEMENT ---
     var email by remember { mutableStateOf("") }
     var otpToken by remember { mutableStateOf("") }
-    var verificationState by remember { mutableStateOf(0) } // 0: Input, 1: Loading, 2: OTP
+
+    // UI STEPS: 0 = Email Input, 1 = OTP Input
+    var currentStep by remember { mutableIntStateOf(0) }
+
+    // LOADING STATE: True when talking to Supabase
+    var isLoading by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // List of public domains to BLOCK
     val publicDomains = listOf(
         "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
         "live.com", "icloud.com", "aol.com", "protonmail.com"
     )
 
     Scaffold(
-        containerColor = Color(0xFFFAFAFA), // Paper White
+        containerColor = Color(0xFFFAFAFA),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             IconButton(
@@ -886,7 +895,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            // --- HEADER ---
+            // --- HEADER (Same for both steps) ---
             Spacer(modifier = Modifier.height(20.dp))
             Box(
                 modifier = Modifier
@@ -896,7 +905,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Lock, // Lock Icon
+                    imageVector = Icons.Default.Lock,
                     contentDescription = null,
                     tint = InkCharcoal,
                     modifier = Modifier.size(32.dp)
@@ -907,7 +916,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
 
             Text(
                 "Unlock Your Campus",
-                fontFamily = LibreFont, // Premium Serif
+                fontFamily = LibreFont,
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = InkCharcoal,
@@ -927,54 +936,37 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // --- THE PRIVACY PLEDGE CARD ---
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)), // Soft Green
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFC8E6C9), RoundedCornerShape(12.dp))
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.Top
+            // --- PRIVACY CARD ---
+            if (currentStep == 0) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFC8E6C9), RoundedCornerShape(12.dp))
                 ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            "100% Anonymous",
-                            fontFamily = InterFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color(0xFF2E7D32)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Your email is used ONLY for verification. It is never displayed, shared, or linked to your letters.",
-                            fontFamily = InterFont,
-                            fontSize = 13.sp,
-                            color = Color(0xFF1B5E20),
-                            lineHeight = 18.sp
-                        )
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("100% Anonymous", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF2E7D32))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Your email is used ONLY for verification. It is never displayed.", fontFamily = InterFont, fontSize = 13.sp, color = Color(0xFF1B5E20), lineHeight = 18.sp)
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(32.dp))
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // --- INPUT FIELDS ---
-            if (verificationState == 2) {
-                // STATE 2: OTP
+            // --- LOGIC SWITCH ---
+            if (currentStep == 1) {
+                // ==============================
+                // STEP 2: OTP INPUT UI
+                // ==============================
                 Text("Check your inbox for the code!", fontFamily = InterFont, fontWeight = FontWeight.Bold)
-
-                // --- NEW SPAM HINT ---
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "(Check your spam folder if it doesn't appear)",
-                    fontFamily = InterFont,
-                    fontSize = 12.sp,
-                    color = Color.Red.copy(0.7f) // Slight red tint to catch attention
-                )
-
+                Text("(Check spam folder if needed)", fontFamily = InterFont, fontSize = 12.sp, color = Color.Red.copy(0.7f))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 TextField(
@@ -989,7 +981,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
-                    modifier = Modifier.fillMaxWidth().border(2.dp, InkCharcoal, RoundedCornerShape(12.dp)), // Retro Border
+                    modifier = Modifier.fillMaxWidth().border(2.dp, InkCharcoal, RoundedCornerShape(12.dp)),
                     shape = RoundedCornerShape(12.dp)
                 )
 
@@ -997,38 +989,45 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
 
                 Button(
                     onClick = {
-                        if (otpToken.length >= 6) {
+                        if (otpToken.isNotEmpty()) {
+                            isLoading = true // Start Spinner
                             scope.launch {
                                 try {
                                     supabase.auth.verifyEmailOtp(
                                         type = OtpType.Email.EMAIL,
-                                        email = email,
+                                        email = email.trim().lowercase(),
                                         token = otpToken
                                     )
-                                    onVerificationSuccess()
+                                    onVerificationSuccess() // Success!
                                 } catch (e: Exception) {
-                                    snackbarHostState.showSnackbar("Invalid code. Try again.")
+                                    isLoading = false // Stop Spinner
+                                    snackbarHostState.showSnackbar("Invalid code: ${e.message}")
                                 }
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    enabled = !isLoading
                 ) {
-                    Text("Verify & Enter", color = Color.White, fontWeight = FontWeight.Bold)
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("Verify & Enter", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Option to go back to email
+                TextButton(onClick = { currentStep = 0; isLoading = false }) {
+                    Text("Change Email", color = Color.Gray, fontFamily = InterFont)
                 }
 
             } else {
-                // STATE 1: EMAIL
-                Text(
-                    "Official Email",
-                    fontFamily = InterFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = InkCharcoal,
-                    modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
-                )
+                // ==============================
+                // STEP 1: EMAIL INPUT UI
+                // ==============================
+                Text("Official Email", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkCharcoal, modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp))
 
                 TextField(
                     value = email,
@@ -1042,7 +1041,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
-                    modifier = Modifier.fillMaxWidth().border(2.dp, InkCharcoal, RoundedCornerShape(12.dp)), // Retro Border
+                    modifier = Modifier.fillMaxWidth().border(2.dp, InkCharcoal, RoundedCornerShape(12.dp)),
                     shape = RoundedCornerShape(12.dp)
                 )
 
@@ -1050,32 +1049,58 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
 
                 Button(
                     onClick = {
-                        if (email.isNotEmpty() && verificationState == 0) {
-                            // BLOCK PUBLIC DOMAINS
-                            val domain = email.substringAfter("@", "").lowercase()
-                            if (publicDomains.contains(domain) || domain.isEmpty()) {
-                                scope.launch { snackbarHostState.showSnackbar("Please use your college email (not Gmail).") }
-                                return@Button
-                            }
+                        val cleanEmail = email.trim().lowercase()
 
-                            // SEND OTP
-                            verificationState = 1
+                        if (cleanEmail.isEmpty()) {
+                            scope.launch { snackbarHostState.showSnackbar("Please enter your email") }
+                            return@Button
+                        }
+
+                        // 🚨 BACKDOOR FOR GOOGLE REVIEWER 🚨
+                        if (cleanEmail.contains("demo")) {
+                            isLoading = true
                             scope.launch {
                                 try {
-                                    supabase.auth.signInWith(OTP) { this.email = email }
-                                    verificationState = 2
-                                } catch(e: Exception) {
-                                    verificationState = 0
-                                    snackbarHostState.showSnackbar("Error: ${e.message}")
+                                    // Log in with password logic
+                                    supabase.auth.signInWith(io.github.jan.supabase.auth.providers.builtin.Email) {
+                                        this.email = "demo@srmist.edu.in"
+                                        password = "demo1234"
+                                    }
+                                    onVerificationSuccess()
+                                } catch (e: Exception) {
+                                    isLoading = false
+                                    snackbarHostState.showSnackbar("Backdoor Failed: ${e.message}")
                                 }
+                            }
+                            return@Button
+                        }
+
+                        // 🛡️ NORMAL STUDENT LOGIC 🛡️
+                        val domain = cleanEmail.substringAfter("@", "")
+                        if (publicDomains.contains(domain) || domain.isEmpty()) {
+                            scope.launch { snackbarHostState.showSnackbar("Please use your college email (not Gmail).") }
+                            return@Button
+                        }
+
+                        // Send OTP
+                        isLoading = true
+                        scope.launch {
+                            try {
+                                supabase.auth.signInWith(OTP) { this.email = cleanEmail }
+                                currentStep = 1 // Move to OTP Screen
+                                isLoading = false // Stop spinner so OTP screen shows "Verify"
+                            } catch (e: Exception) {
+                                isLoading = false
+                                snackbarHostState.showSnackbar("Error: ${e.message}")
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    enabled = !isLoading
                 ) {
-                    if (verificationState == 1) {
+                    if (isLoading) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                     } else {
                         Text("Send Verification Code", color = Color.White, fontWeight = FontWeight.Bold)
@@ -1156,23 +1181,27 @@ fun WriteScreen(
     onNavigateBack: () -> Unit,
     onTermsClick: () -> Unit
 ) {
-    // 1. INPUT STATES
-    var recipient by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
-    var selectedColor by remember { mutableStateOf(AppPalette[4]) }
+    // --- 1. PERSISTENT INPUT STATES (Using rememberSaveable) ---
+    // These will now survive if you go to "Terms" and come back.
+    var recipient by rememberSaveable { mutableStateOf("") }
+    var message by rememberSaveable { mutableStateOf("") }
+    var isChecked by rememberSaveable { mutableStateOf(false) }
 
-    // 2. SAFETY & UI STATES
-    var isChecked by remember { mutableStateOf(false) }
-    var isSending by remember { mutableStateOf(false) }
+    // We save the Color as an Integer (ARGB) because 'Color' objects can't be saved directly
+    var selectedColorInt by rememberSaveable { mutableIntStateOf(AppPalette[4].toArgb()) }
+    val selectedColor = Color(selectedColorInt) // Convert back to Color object for UI
+
+    // 2. UI STATES
+    var isSending by remember { mutableStateOf(false) } // No need to save this
     var showThankYou by remember { mutableStateOf(false) }
 
-    // 3. SYSTEM TOOLS (Required for Limit)
+    // 3. SYSTEM TOOLS
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { context.getSharedPreferences("unsaid_prefs", android.content.Context.MODE_PRIVATE) }
 
-    // 4. AUTO-NAVIGATE AFTER SUCCESS
+    // 4. AUTO-NAVIGATE
     LaunchedEffect(showThankYou) {
         if (showThankYou) {
             delay(2000)
@@ -1183,7 +1212,7 @@ fun WriteScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = Color(0xFFFAFAFA),
-            snackbarHost = { SnackbarHost(snackbarHostState) }, // <--- Shows "Limit Reached" error
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onNavigateBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
@@ -1248,14 +1277,13 @@ fun WriteScreen(
                                             recipient = recipient.ifEmpty { "Anonymous" },
                                             message = message,
                                             space = spaceName,
-                                            colorHex = selectedColor.toArgb().toLong(),
+                                            colorHex = selectedColorInt.toLong(), // Use the Int we saved
                                             reports = 0,
                                             isHidden = false
                                         )
                                         supabase.from("letters").insert(newLetter)
 
                                         withContext(Dispatchers.Main) {
-                                            // SAVE NEW COUNT
                                             prefs.edit()
                                                 .putString("last_post_date", today)
                                                 .putInt("daily_post_count", dailyCount + 1)
@@ -1284,8 +1312,6 @@ fun WriteScreen(
                 }
             }
         ) { paddingValues ->
-            // ... (The rest of the UI code for Colors and Card stays the same)
-            // To save space, just keep the existing UI code below inside the Scaffold content
             Column(
                 modifier = Modifier
                     .padding(paddingValues)
@@ -1313,7 +1339,7 @@ fun WriteScreen(
                                     color = if (selectedColor == color) Color.Black else Color.LightGray,
                                     shape = RoundedCornerShape(8.dp)
                                 )
-                                .clickable { selectedColor = color }
+                                .clickable { selectedColorInt = color.toArgb() } // Update the Int value
                         )
                     }
                 }

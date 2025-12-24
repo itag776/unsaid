@@ -14,14 +14,14 @@ plugins {
 }
 
 android {
-    namespace = "com.example.unsaid"
-    compileSdk = 34
+    namespace = "com.abhishek.unsaid"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.unsaid"
+        applicationId = "com.abhishek.unsaid"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
+        targetSdk = 35
+        versionCode = 7
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
