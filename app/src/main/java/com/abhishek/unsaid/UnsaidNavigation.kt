@@ -1,49 +1,33 @@
 package com.abhishek.unsaid
 
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+// --- ANDROID & COMPOSE IMPORTS ---
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.material.icons.filled.Warning
-import io.github.jan.supabase.postgrest.query.Columns
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import androidx.compose.animation.*
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.ui.graphics.luminance // To check for dark colors automatically
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import android.view.HapticFeedbackConstants
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -51,26 +35,38 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+
+// --- SUPABASE & NETWORK IMPORTS ---
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -78,16 +74,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+// --- PROJECT IMPORTS ---
 import com.abhishek.unsaid.ui.theme.InkCharcoal
 import com.abhishek.unsaid.ui.theme.InterFont
 import com.abhishek.unsaid.ui.theme.LibreFont
 import com.abhishek.unsaid.ui.theme.PaperWhite
-import io.github.jan.supabase.postgrest.postgrest
+
+/**
+ * UNSAID - Anonymous Social Network
+ *
+ * This file contains the main Navigation Graph and UI logic for the application.
+ * Architecture Note: For a production-grade app, logic currently inside Composables
+ * (Supabase calls) should be moved to ViewModels to follow MVVM patterns.
+ * Kept here for simplicity in this specific module.
+ */
+
+// --- CONSTANTS & CONFIGURATION ---
+const val DAILY_POST_LIMIT = 3
+const val MAX_MSG_LENGTH = 150
+const val ANIMATION_DURATION = 1000
 
 // --- THEME DEFINITIONS ---
 val TextGray = Color(0xFF666666)
-val Graphite = Color(0xFF202020) // Premium Soft Black
-// --- NEW PALETTE ---
+
+// Optimized Palette for visual distinctiveness
 val AppPalette = listOf(
     Color(0xFFFFFFFF), Color(0xFFE0E0E0), Color(0xFFD1D1D1), Color(0xFF333333), Color(0xFFFDD835), Color(0xFFFBC02D),
     Color(0xFFBCAAA4), Color(0xFF795548), Color(0xFFFFF9C4), Color(0xFFFFE082), Color(0xFFF8BBD0), Color(0xFFF48FB1),
@@ -97,17 +110,16 @@ val AppPalette = listOf(
     Color(0xFF558B2F), Color(0xFF2E7D32), Color(0xFF9575CD), Color(0xFFAD1457), Color(0xFF673AB7), Color(0xFFFFF59D)
 )
 
-
+// Global Supabase Client (Ideally, inject this via Hilt/Koin)
 val supabase = createSupabaseClient(
     supabaseUrl = BuildConfig.SUPABASE_URL,
     supabaseKey = BuildConfig.SUPABASE_KEY
 ) {
     install(Postgrest)
-    install(Auth) {
-
-    }
+    install(Auth)
 }
 
+// --- DATA MODELS ---
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class Letter(
@@ -121,6 +133,8 @@ data class Letter(
     @SerialName("is_hidden") val isHidden: Boolean = false
 )
 
+@Serializable
+data class VersionCheck(val min_version: Int)
 
 // --- ROUTES ---
 object Routes {
@@ -128,56 +142,68 @@ object Routes {
     const val TERMS = "terms"
     const val WELCOME = "welcome"
     const val CHOOSE_SPACE = "choose_space"
-
-
     const val FOCUS = "focus/{id}/{message}/{recipient}/{date}/{color}/{reports}"
-
     const val CHOOSE_WRITE_SPACE = "choose_write_space"
     const val VERIFY = "verify"
     const val WRITE = "write"
     const val FEED_WITH_ARG = "feed/{spaceName}"
 }
 
-// --- BOUNCY MODIFIER ---
+// --- CUSTOM MODIFIERS ---
+
+/**
+ * Adds a bouncy spring animation to clicks.
+ * Note: Uses [composed] for stateful modifier behavior.
+ */
 fun Modifier.bounceClick(scaleDown: Float = 0.95f, onClick: () -> Unit) = composed {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val view = LocalView.current
     val scale by animateFloatAsState(
-        if (isPressed) scaleDown else 1f,
-        spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        targetValue = if (isPressed) scaleDown else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "BounceAnimation"
     )
+    
     LaunchedEffect(isPressed) {
         if (isPressed) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
+    
     this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
 }
 
-// --- HELPER: TIME AGO ---
+// --- UTILS ---
+
 fun getTimeAgo(isoString: String?): String {
     if (isoString == null) return "Just now"
-    try {
+    return try {
         val instant = java.time.Instant.parse(isoString)
         val now = java.time.Instant.now()
         val diff = java.time.Duration.between(instant, now)
-        return when {
+        when {
             diff.toMinutes() < 1 -> "Just now"
             diff.toMinutes() < 60 -> "${diff.toMinutes()}m ago"
             diff.toHours() < 24 -> "${diff.toHours()}h ago"
             else -> "${diff.toDays()}d ago"
         }
     } catch (e: Exception) {
-        return "Recently"
+        "Recently"
     }
 }
 
-// --- MAIN NAVIGATION ---
+// ==========================================
+// MAIN NAVIGATION GRAPH
+// ==========================================
+
 @Composable
 fun UnsaidNavigation() {
     val navController = rememberNavController()
+    
     NavHost(navController = navController, startDestination = Routes.SPLASH) {
+        
+        // Splash & Version Check
         composable(Routes.SPLASH) {
             SplashScreen {
                 navController.navigate(Routes.WELCOME) {
@@ -185,6 +211,7 @@ fun UnsaidNavigation() {
                 }
             }
         }
+        
         composable(Routes.TERMS) {
             TermsScreen(onBackClick = { navController.popBackStack() })
         }
@@ -196,77 +223,65 @@ fun UnsaidNavigation() {
             )
         }
 
+        // Choosing where to read
         composable(Routes.CHOOSE_SPACE) {
             ChooseSpaceScreen(
                 onGlobalClick = { navController.navigate("feed/Global") },
                 onCollegeClick = {
-                    // --- THE FIX: SESSION CHECK ---
+                    // Check Session State
                     val currentUser = supabase.auth.currentUserOrNull()
-
                     if (currentUser != null) {
-                        // 1. User is already logged in -> Go straight to their feed
                         val domain = currentUser.email?.substringAfter("@") ?: "college"
                         navController.navigate("feed/$domain")
                     } else {
-                        // 2. No user found -> Go to Verification
                         navController.navigate(Routes.VERIFY)
                     }
                 },
                 onBackClick = { navController.popBackStack() }
             )
         }
-        // --- NEW: CHOOSE SPACE FOR WRITING ---
+        
+        // Choosing where to write
         composable(Routes.CHOOSE_WRITE_SPACE) {
             ChooseSpaceScreen(
-                // 1. Global Button -> Goes to Write Global
                 onGlobalClick = { navController.navigate("${Routes.WRITE}/Global") },
-
-                // 2. College Button -> Check Login -> Go to Write College
                 onCollegeClick = {
                     val currentUser = supabase.auth.currentUserOrNull()
                     if (currentUser != null) {
                         val domain = currentUser.email?.substringAfter("@") ?: "college"
                         navController.navigate("${Routes.WRITE}/$domain")
                     } else {
-                        // If not logged in, they must verify first.
-                        // (Note: After verifying, they will land on Feed, which is okay for now)
                         navController.navigate(Routes.VERIFY)
                     }
                 },
                 onBackClick = { navController.popBackStack() }
             )
         }
+
+        // Detailed View of a Letter
         composable(
             route = Routes.FOCUS,
             arguments = listOf(
-                navArgument("id") { type = NavType.LongType }, // <--- NEW
+                navArgument("id") { type = NavType.LongType },
                 navArgument("message") { type = NavType.StringType },
                 navArgument("recipient") { type = NavType.StringType },
                 navArgument("date") { type = NavType.StringType },
                 navArgument("color") { type = NavType.LongType },
-                navArgument("reports") { type = NavType.IntType } // <--- NEW
+                navArgument("reports") { type = NavType.IntType }
             )
         ) { backStackEntry ->
-            // Extract the new data
-            val id = backStackEntry.arguments?.getLong("id") ?: 0L
-            val msg = backStackEntry.arguments?.getString("message") ?: ""
-            val rec = backStackEntry.arguments?.getString("recipient") ?: ""
-            val date = backStackEntry.arguments?.getString("date") ?: ""
-            val col = backStackEntry.arguments?.getLong("color") ?: 0xFFFFFFFF
-            val rep = backStackEntry.arguments?.getInt("reports") ?: 0
-
-            // Pass it to the screen (Fixes the Red Error)
             FocusLetterScreen(
-                letterId = id,
-                message = msg,
-                recipient = rec,
-                date = date,
-                colorHex = col,
-                currentReports = rep,
+                letterId = backStackEntry.arguments?.getLong("id") ?: 0L,
+                message = backStackEntry.arguments?.getString("message") ?: "",
+                recipient = backStackEntry.arguments?.getString("recipient") ?: "",
+                date = backStackEntry.arguments?.getString("date") ?: "",
+                colorHex = backStackEntry.arguments?.getLong("color") ?: 0xFFFFFFFF,
+                currentReports = backStackEntry.arguments?.getInt("reports") ?: 0,
                 onBackClick = { navController.popBackStack() }
             )
         }
 
+        // Auth Flow
         composable(Routes.VERIFY) {
             VerificationScreen(
                 onVerificationSuccess = {
@@ -280,6 +295,7 @@ fun UnsaidNavigation() {
             )
         }
 
+        // Main Feed
         composable(
             route = Routes.FEED_WITH_ARG,
             arguments = listOf(navArgument("spaceName") { type = NavType.StringType })
@@ -289,15 +305,16 @@ fun UnsaidNavigation() {
             var isLoading by remember { mutableStateOf(false) }
 
             val scope = rememberCoroutineScope()
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val lifecycleOwner = LocalLifecycleOwner.current // To detect "On Resume"
+            val context = LocalContext.current
+            val lifecycleOwner = LocalLifecycleOwner.current
 
-            // --- THE SMART REFRESH FUNCTION ---
+            // Logic to fetch letters
+            // TODO: Move this logic to a ViewModel
             val refreshLetters = {
                 isLoading = true
                 scope.launch(Dispatchers.IO) {
                     try {
-                        // 1. Get List from Server
+                        // 1. Fetch from Supabase
                         val rawList = supabase.from("letters")
                             .select {
                                 filter {
@@ -305,31 +322,26 @@ fun UnsaidNavigation() {
                                     eq("is_hidden", false)
                                 }
                                 order("created_at", Order.DESCENDING)
-                                limit(10)
+                                limit(20) // Pagination limit
                             }.decodeList<Letter>()
 
-                        // 2. FILTER LOCALLY (The Fix)
-                        // We check the phone's memory for any ID starting with "reported_"
-                        val prefs = context.getSharedPreferences("reported_letters", android.content.Context.MODE_PRIVATE)
-
+                        // 2. Local Filtering (Blocked Content)
+                        val prefs = context.getSharedPreferences("reported_letters", Context.MODE_PRIVATE)
                         val cleanList = rawList.filter { letter ->
-                            // If "reported_123" is true, we SKIP this letter
                             !prefs.getBoolean("reported_${letter.id}", false)
                         }
 
                         // 3. Update UI
                         letters = cleanList
-
                     } catch (e: Exception) {
-                        println("Error: ${e.message}")
+                        e.printStackTrace()
                     } finally {
                         isLoading = false
                     }
                 }
             }
 
-            // --- AUTO-REFRESH ON RETURN ---
-            // This forces the feed to reload & filter every time you come back from reporting
+            // Auto-refresh when user returns to this screen (e.g. after reporting a post)
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
@@ -346,34 +358,34 @@ fun UnsaidNavigation() {
                 isLoading = isLoading,
                 onHeaderClick = { navController.popBackStack() },
                 onWriteClick = { navController.navigate("${Routes.WRITE}/$spaceName") },
-                onRefresh = { refreshLetters() }, // Manual refresh
+                onRefresh = { refreshLetters() },
                 onLetterClick = { letter ->
-                    val encodedMsg = android.net.Uri.encode(letter.message)
-                    val encodedRec = android.net.Uri.encode(letter.recipient)
-                    val encodedDate = android.net.Uri.encode(getTimeAgo(letter.createdAt))
+                    val encodedMsg = Uri.encode(letter.message)
+                    val encodedRec = Uri.encode(letter.recipient)
+                    val encodedDate = Uri.encode(getTimeAgo(letter.createdAt))
                     navController.navigate("focus/${letter.id}/$encodedMsg/$encodedRec/$encodedDate/${letter.colorHex}/${letter.reports}")
                 }
             )
         }
+
+        // Write Screen
         composable(
             route = "${Routes.WRITE}/{spaceName}",
             arguments = listOf(navArgument("spaceName") { type = NavType.StringType })
         ) { backStackEntry ->
             val spaceName = backStackEntry.arguments?.getString("spaceName") ?: "Global"
-
             WriteScreen(
                 spaceName = spaceName,
                 onNavigateBack = { navController.popBackStack() },
-                onTermsClick = { navController.navigate(Routes.TERMS) } // <--- Pass the click action
+                onTermsClick = { navController.navigate(Routes.TERMS) }
             )
-        }
-
-        // Add the Terms Screen Route
-        composable(Routes.TERMS) {
-            TermsScreen(onBackClick = { navController.popBackStack() })
         }
     }
 }
+
+// ==========================================
+// SCREEN COMPOSABLES
+// ==========================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -386,11 +398,10 @@ fun FeedScreen(
     onRefresh: () -> Unit,
     onLetterClick: (Letter) -> Unit
 ) {
-    // --- SEARCH STATES ---
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // --- FILTER LOGIC (RECIPIENT ONLY) ---
+    // Efficiently filter list when query changes
     val filteredLetters = remember(searchQuery, letters) {
         if (searchQuery.isEmpty()) letters else letters.filter {
             it.recipient.contains(searchQuery, ignoreCase = true)
@@ -416,16 +427,15 @@ fun FeedScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp), // Removed .height(48.dp) to prevent cutting text
+                        .padding(vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     if (isSearchActive) {
-                        // --- SEARCH MODE ---
                         TextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search To: Name...", fontFamily = InterFont, fontSize = 16.sp) }, // Increased font size slightly
+                            placeholder = { Text("Search To: Name...", fontFamily = InterFont, fontSize = 16.sp) },
                             singleLine = true,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.White,
@@ -437,10 +447,8 @@ fun FeedScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .border(2.dp, Color.Black, RoundedCornerShape(8.dp))
-                                .clip(RoundedCornerShape(8.dp)), // Clip prevents background spill
-                            leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray)
-                            },
+                                .clip(RoundedCornerShape(8.dp)),
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
                             trailingIcon = {
                                 IconButton(onClick = {
                                     isSearchActive = false
@@ -451,7 +459,6 @@ fun FeedScreen(
                             }
                         )
                     } else {
-                        // --- NORMAL TITLE MODE ---
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -490,7 +497,7 @@ fun FeedScreen(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color.Black)
                 }
 
-                // --- MASONRY GRID ---
+                // Masonry Grid for aesthetic layout
                 LazyVerticalStaggeredGrid(
                     columns = StaggeredGridCells.Fixed(2),
                     verticalItemSpacing = 8.dp,
@@ -507,7 +514,7 @@ fun FeedScreen(
                     }
                 }
 
-                // Empty State
+                // Empty State Handling
                 if (filteredLetters.isEmpty() && !isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
@@ -522,24 +529,21 @@ fun FeedScreen(
     }
 }
 
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
-    // 1. GET STORAGE
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val prefs = remember { context.getSharedPreferences("unsaid_prefs", android.content.Context.MODE_PRIVATE) }
-
-    // 2. CHECK IF SEEN BEFORE
-    // If "onboarding_complete" is true, showOnboarding becomes false.
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("unsaid_prefs", Context.MODE_PRIVATE) }
+    
+    // Onboarding State: Defaults to TRUE unless explicitly saved as false
     var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_complete", false)) }
 
     Box(modifier = Modifier.fillMaxSize().background(PaperWhite)) {
 
-        // --- 1. THE MAIN MENU (Visible if Onboarding is Done) ---
+        // --- MAIN MENU (Visible after onboarding) ---
         AnimatedVisibility(
             visible = !showOnboarding,
-            enter = fadeIn(animationSpec = tween(1000)),
+            enter = fadeIn(animationSpec = tween(ANIMATION_DURATION)),
             exit = fadeOut()
         ) {
             Box(
@@ -588,7 +592,7 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Default.Email, // Fixed Icon
+                                imageVector = Icons.Default.Email,
                                 contentDescription = null,
                                 tint = InkCharcoal,
                                 modifier = Modifier.size(40.dp)
@@ -643,17 +647,17 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
             }
         }
 
-        // --- 2. THE ONBOARDING OVERLAY (Visible only FIRST TIME) ---
+        // --- ONBOARDING OVERLAY ---
         AnimatedVisibility(
             visible = showOnboarding,
             enter = fadeIn(),
             exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
         ) {
-            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 3 })
+            val pagerState = rememberPagerState(pageCount = { 3 })
             val coroutineScope = rememberCoroutineScope()
 
             Column(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.foundation.pager.HorizontalPager(
+                HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 ) { page ->
@@ -662,7 +666,7 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        // Dynamic Card Visual
+                        // Dynamic Card Visual Animation
                         val rotation = when(page) { 0 -> -5f; 1 -> 5f; else -> 0f }
                         val color = when(page) { 0 -> AppPalette[24]; 1 -> AppPalette[29]; else -> AppPalette[20] }
 
@@ -676,7 +680,7 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                                 .border(3.dp, Color.Black, RoundedCornerShape(16.dp))
                                 .padding(16.dp)
                         ) {
-                            // Fake Card Content
+                            // Mock Card Content
                             Column {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Box(modifier = Modifier.width(60.dp).height(8.dp).background(Color.Black.copy(0.1f), CircleShape))
@@ -686,11 +690,6 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                                 Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color.Black.copy(0.1f), CircleShape))
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Box(modifier = Modifier.fillMaxWidth(0.8f).height(8.dp).background(Color.Black.copy(0.1f), CircleShape))
-                                Spacer(modifier = Modifier.weight(1f))
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Box(modifier = Modifier.width(30.dp).height(6.dp).background(Color.Black.copy(0.1f), CircleShape))
-                                    Box(modifier = Modifier.width(30.dp).height(6.dp).background(Color.Black.copy(0.1f), CircleShape))
-                                }
                             }
                         }
 
@@ -707,45 +706,27 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                             else -> "Or confess specifically within your college."
                         }
 
-                        Text(
-                            text = title,
-                            fontFamily = LibreFont,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 36.sp,
-                            color = InkCharcoal
-                        )
+                        Text(title, fontFamily = LibreFont, fontSize = 28.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 36.sp, color = InkCharcoal)
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = subtitle,
-                            fontFamily = LibreFont,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            color = InkCharcoal,
-                            lineHeight = 30.sp
-                        )
+                        Text(subtitle, fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = InkCharcoal, lineHeight = 30.sp)
                     }
                 }
 
-                // Footer Navigation
+                // Footer Navigation Controls
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 24.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Indicators
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         repeat(3) { index ->
                             val isSelected = pagerState.currentPage == index
-                            val width by animateDpAsState(if (isSelected) 24.dp else 8.dp)
+                            val width by animateDpAsState(if (isSelected) 24.dp else 8.dp, label = "dotWidth")
                             val color = if (isSelected) InkCharcoal else Color.LightGray
                             Box(modifier = Modifier.height(8.dp).width(width).clip(CircleShape).background(color))
                         }
                     }
 
-                    // Next / Get Started Button
                     Box(
                         modifier = Modifier
                             .clip(CircleShape)
@@ -755,7 +736,6 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                                     if (pagerState.currentPage < 2) {
                                         pagerState.animateScrollToPage(pagerState.currentPage + 1)
                                     } else {
-                                        // 3. SAVE TO STORAGE & CLOSE
                                         prefs.edit().putBoolean("onboarding_complete", true).apply()
                                         showOnboarding = false
                                     }
@@ -763,18 +743,14 @@ fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
                             }
                             .padding(horizontal = 24.dp, vertical = 12.dp)
                     ) {
-                        Text(
-                            text = if (pagerState.currentPage == 2) "Get Started" else "Next",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = InterFont
-                        )
+                        Text(if (pagerState.currentPage == 2) "Get Started" else "Next", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InterFont)
                     }
                 }
             }
         }
     }
 }
+
 @Composable
 fun ChooseSpaceScreen(
     onGlobalClick: () -> Unit,
@@ -782,7 +758,7 @@ fun ChooseSpaceScreen(
     onBackClick: () -> Unit
 ) {
     Scaffold(
-        containerColor = Color(0xFFFAFAFA), // Paper White
+        containerColor = Color(0xFFFAFAFA),
         topBar = {
             IconButton(
                 onClick = onBackClick,
@@ -800,79 +776,43 @@ fun ChooseSpaceScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(20.dp))
-
-            // --- HEADER ---
-            Text(
-                "Choose a Space",
-                fontFamily = LibreFont,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = InkCharcoal
-            )
-
+            Text("Choose a Space", fontFamily = LibreFont, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
             Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                "Where do you want to speak?",
-                fontFamily = InterFont,
-                fontSize = 16.sp,
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
-
+            Text("Where do you want to speak?", fontFamily = InterFont, fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(48.dp))
 
-            // --- GLOBAL CARD (Colorful & Tilted) ---
             ColorfulSpaceCard(
                 title = "Global Feed",
                 description = "The world's archive. Read letters from everywhere.",
                 icon = Icons.Default.Home,
-                color = Color(0xFFFFE082), // Amber/Yellow
-                rotation = -3f, // Tilted Left
+                color = Color(0xFFFFE082),
+                rotation = -3f,
                 onClick = onGlobalClick
             )
-
             Spacer(modifier = Modifier.height(32.dp))
-
-            // --- COLLEGE CARD (Colorful & Tilted) ---
             ColorfulSpaceCard(
                 title = "College Feed",
-                description = "Anonymous confessions.Exclusive to your college.",
+                description = "Anonymous confessions. Exclusive to your college.",
                 icon = Icons.Default.Person,
-                color = Color(0xFF81D4FA), // Light Blue
-                rotation = 3f, // Tilted Right
+                color = Color(0xFF81D4FA),
+                rotation = 3f,
                 onClick = onCollegeClick
             )
         }
     }
 }
 
-// COMPLETE REPLACEMENT for VerificationScreen
-// Replace the entire VerificationScreen composable (starting around line 470)
-
-// COMPLETE REPLACEMENT for VerificationScreen
-// Replace the entire VerificationScreen composable (starting around line 470)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Unit) {
-    // --- STATE MANAGEMENT ---
     var email by remember { mutableStateOf("") }
     var otpToken by remember { mutableStateOf("") }
-
-    // UI STEPS: 0 = Email Input, 1 = OTP Input
     var currentStep by remember { mutableIntStateOf(0) }
-
-    // LOADING STATE: True when talking to Supabase
     var isLoading by remember { mutableStateOf(false) }
-
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val publicDomains = listOf(
-        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
-        "live.com", "icloud.com", "aol.com", "protonmail.com"
-    )
+    val publicDomains = listOf("gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "live.com", "icloud.com")
 
     Scaffold(
         containerColor = Color(0xFFFAFAFA),
@@ -894,59 +834,27 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            // --- HEADER (Same for both steps) ---
             Spacer(modifier = Modifier.height(20.dp))
             Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(0.05f)),
+                modifier = Modifier.size(64.dp).clip(CircleShape).background(Color.Black.copy(0.05f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = InkCharcoal,
-                    modifier = Modifier.size(32.dp)
-                )
+                Icon(Icons.Default.Lock, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(32.dp))
             }
-
             Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                "Unlock Your Campus",
-                fontFamily = LibreFont,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = InkCharcoal,
-                textAlign = TextAlign.Center
-            )
-
+            Text("Unlock Your Campus", fontFamily = LibreFont, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, textAlign = TextAlign.Center)
             Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                "To ensure this space remains exclusive to students, we need to verify you belong here.",
-                fontFamily = InterFont,
-                fontSize = 16.sp,
-                color = Color.Gray,
-                textAlign = TextAlign.Center,
-                lineHeight = 24.sp
-            )
-
+            Text("To ensure this space remains exclusive to students, we need to verify you belong here.", fontFamily = InterFont, fontSize = 16.sp, color = Color.Gray, textAlign = TextAlign.Center, lineHeight = 24.sp)
             Spacer(modifier = Modifier.height(32.dp))
 
-            // --- PRIVACY CARD ---
+            // Info Card
             if (currentStep == 0) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFC8E6C9), RoundedCornerShape(12.dp))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
                         Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
@@ -959,11 +867,8 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 Spacer(modifier = Modifier.height(32.dp))
             }
 
-            // --- LOGIC SWITCH ---
             if (currentStep == 1) {
-                // ==============================
-                // STEP 2: OTP INPUT UI
-                // ==============================
+                // STEP 2: OTP INPUT
                 Text("Check your inbox for the code!", fontFamily = InterFont, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text("(Check spam folder if needed)", fontFamily = InterFont, fontSize = 12.sp, color = Color.Red.copy(0.7f))
@@ -972,7 +877,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 TextField(
                     value = otpToken,
                     onValueChange = { otpToken = it },
-                    placeholder = { Text("Enter 8-digit code") },
+                    placeholder = { Text("Enter 6-digit code") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = TextFieldDefaults.colors(
@@ -990,7 +895,7 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 Button(
                     onClick = {
                         if (otpToken.isNotEmpty()) {
-                            isLoading = true // Start Spinner
+                            isLoading = true
                             scope.launch {
                                 try {
                                     supabase.auth.verifyEmailOtp(
@@ -998,9 +903,9 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                                         email = email.trim().lowercase(),
                                         token = otpToken
                                     )
-                                    onVerificationSuccess() // Success!
+                                    onVerificationSuccess()
                                 } catch (e: Exception) {
-                                    isLoading = false // Stop Spinner
+                                    isLoading = false
                                     snackbarHostState.showSnackbar("Invalid code: ${e.message}")
                                 }
                             }
@@ -1011,22 +916,16 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     enabled = !isLoading
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    } else {
-                        Text("Verify & Enter", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
+                    if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    else Text("Verify & Enter", color = Color.White, fontWeight = FontWeight.Bold)
                 }
 
-                // Option to go back to email
                 TextButton(onClick = { currentStep = 0; isLoading = false }) {
                     Text("Change Email", color = Color.Gray, fontFamily = InterFont)
                 }
 
             } else {
-                // ==============================
-                // STEP 1: EMAIL INPUT UI
-                // ==============================
+                // STEP 1: EMAIL INPUT
                 Text("Official Email", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkCharcoal, modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp))
 
                 TextField(
@@ -1050,19 +949,17 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                 Button(
                     onClick = {
                         val cleanEmail = email.trim().lowercase()
-
                         if (cleanEmail.isEmpty()) {
                             scope.launch { snackbarHostState.showSnackbar("Please enter your email") }
                             return@Button
                         }
-
-                        // 🚨 BACKDOOR FOR GOOGLE REVIEWER 🚨
+                        
+                        // QA/Reviewer Bypass - Remove in Production
                         if (cleanEmail.contains("demo")) {
                             isLoading = true
                             scope.launch {
                                 try {
-                                    // Log in with password logic
-                                    supabase.auth.signInWith(io.github.jan.supabase.auth.providers.builtin.Email) {
+                                    supabase.auth.signInWith(Email) {
                                         this.email = "demo@srmist.edu.in"
                                         password = "demo1234"
                                     }
@@ -1075,20 +972,19 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                             return@Button
                         }
 
-                        // 🛡️ NORMAL STUDENT LOGIC 🛡️
+                        // Domain Validation
                         val domain = cleanEmail.substringAfter("@", "")
                         if (publicDomains.contains(domain) || domain.isEmpty()) {
                             scope.launch { snackbarHostState.showSnackbar("Please use your college email (not Gmail).") }
                             return@Button
                         }
 
-                        // Send OTP
                         isLoading = true
                         scope.launch {
                             try {
                                 supabase.auth.signInWith(OTP) { this.email = cleanEmail }
-                                currentStep = 1 // Move to OTP Screen
-                                isLoading = false // Stop spinner so OTP screen shows "Verify"
+                                currentStep = 1
+                                isLoading = false
                             } catch (e: Exception) {
                                 isLoading = false
                                 snackbarHostState.showSnackbar("Error: ${e.message}")
@@ -1100,75 +996,9 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                     enabled = !isLoading
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                    } else {
-                        Text("Send Verification Code", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
+                    if (isLoading) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    else Text("Send Verification Code", color = Color.White, fontWeight = FontWeight.Bold)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun PremiumSelectionCard(
-    title: String,
-    description: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-    color: Color
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            // RETRO STYLE: Thick Border + Shadow
-            .shadow(8.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.1f))
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(2.dp, InkCharcoal, RoundedCornerShape(16.dp)) // <--- The Retro Border
-            .bounceClick(onClick = onClick)
-            .padding(24.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon Container
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(color),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = InkCharcoal,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(20.dp))
-
-            // Text Content
-            Column {
-                Text(
-                    text = title,
-                    fontFamily = LibreFont,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = InkCharcoal
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = description,
-                    fontFamily = InterFont,
-                    fontSize = 13.sp,
-                    color = Color.Gray,
-                    lineHeight = 18.sp
-                )
             }
         }
     }
@@ -1181,27 +1011,24 @@ fun WriteScreen(
     onNavigateBack: () -> Unit,
     onTermsClick: () -> Unit
 ) {
-    // --- 1. PERSISTENT INPUT STATES (Using rememberSaveable) ---
-    // These will now survive if you go to "Terms" and come back.
+    // Persistent Input States (Survives navigation)
     var recipient by rememberSaveable { mutableStateOf("") }
     var message by rememberSaveable { mutableStateOf("") }
     var isChecked by rememberSaveable { mutableStateOf(false) }
-
-    // We save the Color as an Integer (ARGB) because 'Color' objects can't be saved directly
     var selectedColorInt by rememberSaveable { mutableIntStateOf(AppPalette[4].toArgb()) }
-    val selectedColor = Color(selectedColorInt) // Convert back to Color object for UI
-
-    // 2. UI STATES
-    var isSending by remember { mutableStateOf(false) } // No need to save this
+    
+    val selectedColor = Color(selectedColorInt)
+    
+    // Transient States
+    var isSending by remember { mutableStateOf(false) }
     var showThankYou by remember { mutableStateOf(false) }
 
-    // 3. SYSTEM TOOLS
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val prefs = remember { context.getSharedPreferences("unsaid_prefs", android.content.Context.MODE_PRIVATE) }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("unsaid_prefs", Context.MODE_PRIVATE) }
 
-    // 4. AUTO-NAVIGATE
+    // Auto-navigate after success
     LaunchedEffect(showThankYou) {
         if (showThankYou) {
             delay(2000)
@@ -1220,55 +1047,34 @@ fun WriteScreen(
                 }
             },
             bottomBar = {
-                // CHECKBOX + BUTTON
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFFAFAFA))
-                        .padding(16.dp)
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFFFAFAFA)).padding(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { isChecked = !isChecked },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(
-                            checked = isChecked,
-                            onCheckedChange = { isChecked = it },
-                            colors = CheckboxDefaults.colors(checkedColor = Color.Black)
-                        )
+                        Checkbox(checked = isChecked, onCheckedChange = { isChecked = it }, colors = CheckboxDefaults.colors(checkedColor = Color.Black))
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text("I agree to the Community Guidelines", fontFamily = InterFont, fontSize = 12.sp, color = Color.Black)
-                            Text(
-                                "Read Terms & Policy",
-                                fontFamily = InterFont,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Blue,
-                                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                                modifier = Modifier.clickable { onTermsClick() }
-                            )
+                            Text("Read Terms & Policy", fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Blue, textDecoration = TextDecoration.Underline, modifier = Modifier.clickable { onTermsClick() })
                         }
                     }
                     Button(
                         onClick = {
                             if (message.isNotEmpty() && isChecked && !isSending) {
-                                // --- DAILY LIMIT CHECK ---
+                                // Daily Limit Check
                                 val today = java.time.LocalDate.now().toString()
                                 val lastDate = prefs.getString("last_post_date", "")
                                 var dailyCount = prefs.getInt("daily_post_count", 0)
 
-                                if (lastDate != today) {
-                                    dailyCount = 0
-                                }
+                                if (lastDate != today) dailyCount = 0
 
-                                if (dailyCount >= 3) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("Daily limit reached (3/3). Come back tomorrow!")
-                                    }
+                                if (dailyCount >= DAILY_POST_LIMIT) {
+                                    scope.launch { snackbarHostState.showSnackbar("Daily limit reached ($DAILY_POST_LIMIT). Come back tomorrow!") }
                                     return@Button
                                 }
-                                // -------------------------
 
                                 isSending = true
                                 scope.launch(Dispatchers.IO) {
@@ -1277,18 +1083,14 @@ fun WriteScreen(
                                             recipient = recipient.ifEmpty { "Anonymous" },
                                             message = message,
                                             space = spaceName,
-                                            colorHex = selectedColorInt.toLong(), // Use the Int we saved
+                                            colorHex = selectedColorInt.toLong(),
                                             reports = 0,
                                             isHidden = false
                                         )
                                         supabase.from("letters").insert(newLetter)
 
                                         withContext(Dispatchers.Main) {
-                                            prefs.edit()
-                                                .putString("last_post_date", today)
-                                                .putInt("daily_post_count", dailyCount + 1)
-                                                .apply()
-
+                                            prefs.edit().putString("last_post_date", today).putInt("daily_post_count", dailyCount + 1).apply()
                                             isSending = false
                                             showThankYou = true
                                         }
@@ -1303,21 +1105,14 @@ fun WriteScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(56.dp)
                     ) {
-                        if (isSending) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                        } else {
-                            Text("Submit Your Message", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
+                        if (isSending) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        else Text("Submit Your Message", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         ) { paddingValues ->
             Column(
-                modifier = Modifier
-                    .padding(paddingValues)
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-                    .verticalScroll(rememberScrollState())
+                modifier = Modifier.padding(paddingValues).fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())
             ) {
                 Text("Choose a Color", fontFamily = LibreFont, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp).align(Alignment.CenterHorizontally))
 
@@ -1334,12 +1129,8 @@ fun WriteScreen(
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(color)
-                                .border(
-                                    width = if (selectedColor == color) 2.dp else 1.dp,
-                                    color = if (selectedColor == color) Color.Black else Color.LightGray,
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clickable { selectedColorInt = color.toArgb() } // Update the Int value
+                                .border(width = if (selectedColor == color) 2.dp else 1.dp, color = if (selectedColor == color) Color.Black else Color.LightGray, shape = RoundedCornerShape(8.dp))
+                                .clickable { selectedColorInt = color.toArgb() }
                         )
                     }
                 }
@@ -1352,9 +1143,7 @@ fun WriteScreen(
                 val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
 
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(2.dp, Color.Black, RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxWidth().border(2.dp, Color.Black, RoundedCornerShape(8.dp)),
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(containerColor = paperColor)
                 ) {
@@ -1379,13 +1168,9 @@ fun WriteScreen(
                         Box(modifier = Modifier.fillMaxWidth()) {
                             TextField(
                                 value = message,
-                                onValueChange = {
-                                    if (it.length <= 150) message = it
-                                },
+                                onValueChange = { if (it.length <= MAX_MSG_LENGTH) message = it },
                                 placeholder = { Text("Type Your Message Here...", color = inkColor.copy(0.5f), fontFamily = LibreFont) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(350.dp),
+                                modifier = Modifier.fillMaxWidth().height(350.dp),
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
@@ -1393,16 +1178,13 @@ fun WriteScreen(
                                 ),
                                 textStyle = TextStyle(fontSize = 20.sp, fontFamily = LibreFont, lineHeight = 30.sp)
                             )
-
                             Text(
-                                text = "${message.length} / 150",
+                                text = "${message.length} / $MAX_MSG_LENGTH",
                                 fontFamily = InterFont,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = inkColor.copy(0.5f),
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(16.dp)
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
                             )
                         }
 
@@ -1437,31 +1219,18 @@ fun WriteScreen(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
                         tint = InkCharcoal,
-                        modifier = Modifier
-                            .size(64.dp)
-                            .border(3.dp, InkCharcoal, CircleShape)
-                            .padding(12.dp)
+                        modifier = Modifier.size(64.dp).border(3.dp, InkCharcoal, CircleShape).padding(12.dp)
                     )
                     Spacer(modifier = Modifier.height(24.dp))
-                    Text(
-                        text = "Unsaid.",
-                        fontFamily = LibreFont,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = InkCharcoal
-                    )
+                    Text("Unsaid.", fontFamily = LibreFont, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Your letter has been sent.",
-                        fontFamily = InterFont,
-                        fontSize = 16.sp,
-                        color = Color.Gray
-                    )
+                    Text("Your letter has been sent.", fontFamily = InterFont, fontSize = 16.sp, color = Color.Gray)
                 }
             }
         }
     }
 }
+
 @Composable
 fun LetterCard(
     recipient: String,
@@ -1470,8 +1239,6 @@ fun LetterCard(
     onClick: () -> Unit = {}
 ) {
     val paperColor = Color(colorHex)
-    // Auto-detect text color based on brightness (Luminance)
-    // If background is dark (< 0.5), text is White. Else, Black.
     val isDark = paperColor.luminance() < 0.5f
     val inkColor = if (isDark) Color.White else Color.Black
     val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
@@ -1479,62 +1246,26 @@ fun LetterCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(4.dp) // Spacing between grid items
-            .border(2.dp, Color.Black, RoundedCornerShape(8.dp)) // THICK BLACK BORDER
+            .padding(4.dp)
+            .border(2.dp, Color.Black, RoundedCornerShape(8.dp))
             .clickable { onClick() },
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = paperColor),
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column {
-            // --- HEADER ---
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "To: $recipient",
-                    fontFamily = InterFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp,
-                    color = inkColor,
-                    maxLines = 1
-                )
-                Icon(
-                    imageVector = Icons.Default.Email, // Envelope Icon
-                    contentDescription = null,
-                    tint = inkColor,
-                    modifier = Modifier.size(16.dp)
-                )
+                Text(text = "To: $recipient", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = inkColor, maxLines = 1)
+                Icon(imageVector = Icons.Default.Email, contentDescription = null, tint = inkColor, modifier = Modifier.size(16.dp))
             }
-
-            // DIVIDER LINE
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
-
-            // --- BODY ---
-            Text(
-                text = message,
-                fontFamily = InterFont, // Or LibreFont if you prefer serif
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                color = inkColor,
-                modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                minLines = 3 // Ensures cards have some height even if empty
-            )
-
-            // DIVIDER LINE
+            Text(text = message, fontFamily = InterFont, fontSize = 14.sp, lineHeight = 20.sp, color = inkColor, modifier = Modifier.padding(12.dp).fillMaxWidth(), minLines = 3)
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
-
-            // --- FOOTER ---
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("SEND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
                 Text("#unsaid", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
                 Text("BACK", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
@@ -1553,29 +1284,20 @@ fun FocusLetterScreen(
     currentReports: Int,
     onBackClick: () -> Unit
 ) {
-    // 1. COLORS
     val paperColor = Color(colorHex)
     val isDark = paperColor.luminance() < 0.5f
     val inkColor = if (isDark) Color.White else Color.Black
     val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
 
-    // 2. REPORT STATE (Fixes "Unresolved reference")
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // Check if previously reported
-    val prefs = remember { context.getSharedPreferences("reported_letters", android.content.Context.MODE_PRIVATE) }
+    val prefs = remember { context.getSharedPreferences("reported_letters", Context.MODE_PRIVATE) }
     var hasReported by remember { mutableStateOf(prefs.getBoolean("reported_$letterId", false)) }
-
-    // NEW: Local visibility state for "Instant Hide"
     var isVisible by remember { mutableStateOf(true) }
 
-    // --- THE "INSTANT HIDE" LOGIC ---
     if (!isVisible) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
+            modifier = Modifier.fillMaxSize().background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1584,226 +1306,121 @@ fun FocusLetterScreen(
                 Text("Letter Reported.", color = Color.White, fontFamily = InterFont, fontWeight = FontWeight.Bold)
                 Text("It has been hidden from your feed.", color = Color.Gray, fontSize = 12.sp, fontFamily = InterFont)
             }
-
-            // Auto-close after 1.5 seconds
             LaunchedEffect(Unit) {
                 delay(1500)
                 onBackClick()
             }
         }
-        return // Stop drawing the rest of the screen
+        return
     }
 
-    // --- NORMAL SCREEN CONTENT ---
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.9f))
-            .clickable { onBackClick() },
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f)).clickable { onBackClick() },
         contentAlignment = Alignment.Center
     ) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth(0.9f)
-                .border(2.dp, Color.Black, RoundedCornerShape(12.dp))
-                .clickable(enabled = false) {},
+            modifier = Modifier.fillMaxWidth(0.9f).border(2.dp, Color.Black, RoundedCornerShape(12.dp)).clickable(enabled = false) {},
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = paperColor),
             elevation = CardDefaults.cardElevation(10.dp)
         ) {
             Column {
-                // HEADER
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("To: $recipient", fontFamily = InterFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = inkColor)
                     Icon(Icons.Default.Email, contentDescription = null, tint = inkColor, modifier = Modifier.size(20.dp))
                 }
-
                 Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
-
-                // BODY
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 200.dp, max = 400.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(24.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 400.dp).verticalScroll(rememberScrollState()).padding(24.dp)
                 ) {
                     Text(message, fontFamily = LibreFont, fontSize = 22.sp, lineHeight = 32.sp, color = inkColor)
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(date.uppercase(), fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(alpha = 0.5f), modifier = Modifier.align(Alignment.End))
                 }
-
                 Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
-
-                // FOOTER (With Report Button)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // REPORT BUTTON
+                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (hasReported) "REPORTED" else "REPORT",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp, fontWeight = FontWeight.Black,
                         color = if (hasReported) inkColor.copy(alpha = 0.5f) else inkColor,
                         modifier = Modifier.clickable {
                             if (!hasReported) {
-                                // 1. Update UI Instantly
                                 hasReported = true
-                                isVisible = false // <--- This triggers the "Instant Hide" screen
-
-                                // 2. Save to Phone Memory
+                                isVisible = false
                                 prefs.edit().putBoolean("reported_$letterId", true).apply()
-
-                                // 3. Send to Server (Background)
                                 scope.launch(Dispatchers.IO) {
                                     try {
-                                        supabase.postgrest.rpc(
-                                            function = "report_letter",
-                                            parameters = buildJsonObject {
-                                                put("row_id", letterId)
-                                            }
-                                        )
-                                        println("Report sent successfully!")
+                                        supabase.postgrest.rpc("report_letter", buildJsonObject { put("row_id", letterId) })
                                     } catch (e: Exception) {
-                                        println("Report error: ${e.message}")
+                                        e.printStackTrace()
                                     }
                                 }
                             }
                         }
                     )
-
                     Text("#unsaid", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
-
                     Text("BACK", fontSize = 12.sp, fontWeight = FontWeight.Black, color = inkColor, modifier = Modifier.clickable { onBackClick() })
                 }
             }
         }
     }
 }
-@Serializable
-data class VersionCheck(val min_version: Int)
 
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     var showUpdateDialog by remember { mutableStateOf(false) }
 
-    // Check Version on Launch
     LaunchedEffect(Unit) {
-        // 1. Force Logout (Your existing logic)
+        try { supabase.auth.signOut() } catch (_: Exception) {}
         try {
-            supabase.auth.signOut()
-        } catch (e: Exception) {
-        }
-
-        // 2. CHECK VERSION
-        try {
-            // Fetch the rule from Supabase
             val result = supabase.from("app_version")
                 .select(columns = Columns.list("min_version")) {
                     limit(1)
-                    single() // Expecting exactly one row
+                    single()
                 }.decodeAs<VersionCheck>()
 
-            // Get Current App Version (from build.gradle)
-            val currentVersion = BuildConfig.VERSION_CODE
-
-            // Compare
-            if (currentVersion < result.min_version) {
-                // APP IS TOO OLD -> BLOCK USER
+            if (BuildConfig.VERSION_CODE < result.min_version) {
                 showUpdateDialog = true
             } else {
-                // APP IS OKAY -> PROCEED
                 delay(2000)
                 onTimeout()
             }
         } catch (e: Exception) {
-            // If offline or error, we usually let them in (Fail Open)
-            // or block them (Fail Closed). For MVP, let's let them in to be safe.
-            println("Version check failed: ${e.message}")
+            // Fail Open strategy for better UX if offline
             delay(2000)
             onTimeout()
         }
     }
 
-
-    Box(
-        modifier = Modifier.fillMaxSize().background(PaperWhite),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
         if (showUpdateDialog) {
-            // --- THE BLOCKING DIALOG ---
             AlertDialog(
-                onDismissRequest = { /* Do nothing (User CANNOT dismiss this) */ },
-                title = {
-                    Text(
-                        "Update Required",
-                        fontFamily = LibreFont,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    Text(
-                        "This version of Unsaid is no longer supported. Please update to continue.",
-                        fontFamily = InterFont
-                    )
-                },
-                icon = {
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = Color.Black
-                    )
-                },
+                onDismissRequest = {},
+                title = { Text("Update Required", fontFamily = LibreFont, fontWeight = FontWeight.Bold) },
+                text = { Text("This version of Unsaid is no longer supported. Please update to continue.", fontFamily = InterFont) },
+                icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = Color.Black) },
                 confirmButton = {
                     Button(
                         onClick = {
-                            // OPEN PLAY STORE
                             val appPackageName = context.packageName
                             try {
-                                context.startActivity(
-                                    Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse("market://details?id=$appPackageName")
-                                    )
-                                )
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$appPackageName")))
                             } catch (e: android.content.ActivityNotFoundException) {
-                                context.startActivity(
-                                    Intent(
-                                        Intent.ACTION_VIEW,
-                                        Uri.parse("https://play.google.com/store/apps/details?id=$appPackageName")
-                                    )
-                                )
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$appPackageName")))
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal)
-                    ) {
-                        Text("Update Now", color = Color.White)
-                    }
+                    ) { Text("Update Now", color = Color.White) }
                 },
                 containerColor = Color.White,
                 shape = RoundedCornerShape(16.dp)
             )
         } else {
-            // --- NORMAL LOGO ---
-            Text(
-                "Unsaid.",
-                color = InkCharcoal,
-                fontSize = 48.sp,
-                fontFamily = LibreFont,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-2).sp
-            )
+            Text("Unsaid.", color = InkCharcoal, fontSize = 48.sp, fontFamily = LibreFont, fontWeight = FontWeight.Bold, letterSpacing = (-2).sp)
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1811,93 +1428,47 @@ fun TermsScreen(onBackClick: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "Terms & Conditions",
-                        fontFamily = LibreFont,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
+                title = { Text("Terms & Conditions", fontFamily = LibreFont, fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBackClick) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         },
         containerColor = Color.White
     ) { padding ->
         Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+            modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
         ) {
-            Text(
-                "End User License Agreement (EULA)",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = InterFont
-            )
+            Text("End User License Agreement (EULA)", fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = InterFont)
             Spacer(modifier = Modifier.height(16.dp))
-
-            LegalSection(
-                "1. Acceptance of Terms",
-                "By accessing or using Unsaid, you agree to be bound by these Terms. If you disagree with any part of the terms, you may not use the Service."
-            )
-
-            LegalSection(
-                "2. User Generated Content",
-                "Unsaid allows you to post anonymous letters. You are solely responsible for the content you post."
-            )
-
-            LegalSection(
-                "3. Zero Tolerance Policy",
-                "We have a Zero Tolerance Policy for objectionable content. The following is strictly prohibited:\n• Harassment, bullying, or threats.\n• Hate speech based on race, religion, gender, or orientation.\n• Doxing (revealing private personal info).\n• Pornography or sexually explicit content.\n\nAny content violating these rules will be removed immediately, and the user's access will be revoked."
-            )
-
-            LegalSection(
-                "4. Content Moderation",
-                "Users can report objectionable content. Reported content is hidden immediately from the reporter's feed and reviewed within 24 hours for permanent removal."
-            )
-
-            LegalSection(
-                "5. Disclaimer",
-                "The Service is provided on an 'AS IS' basis. We do not guarantee that the service will be uninterrupted or error-free."
-            )
-
+            LegalSection("1. Acceptance of Terms", "By accessing or using Unsaid, you agree to be bound by these Terms.")
+            LegalSection("2. User Generated Content", "Unsaid allows you to post anonymous letters. You are solely responsible for the content you post.")
+            LegalSection("3. Zero Tolerance Policy", "Harassment, hate speech, doxing, and sexually explicit content are strictly prohibited.")
+            LegalSection("4. Content Moderation", "Reported content is hidden immediately and reviewed within 24 hours.")
+            LegalSection("5. Disclaimer", "The Service is provided on an 'AS IS' basis.")
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = onBackClick,
                 colors = ButtonDefaults.buttonColors(containerColor = InkCharcoal),
                 modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("I Understand", color = Color.White)
-            }
+            ) { Text("I Understand", color = Color.White) }
         }
     }
 }
+
 @Composable
 fun LegalSection(title: String, body: String) {
     Column(modifier = Modifier.padding(bottom = 16.dp)) {
         Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, fontFamily = InterFont)
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            body,
-            fontSize = 13.sp,
-            color = Color.Gray,
-            fontFamily = InterFont,
-            lineHeight = 20.sp
-        )
+        Text(body, fontSize = 13.sp, color = Color.Gray, fontFamily = InterFont, lineHeight = 20.sp)
     }
 }
+
 @Composable
 fun ColorfulSpaceCard(
     title: String,
     description: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     color: Color,
     rotation: Float,
     onClick: () -> Unit
@@ -1906,59 +1477,25 @@ fun ColorfulSpaceCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(150.dp)
-            .graphicsLayer { rotationZ = rotation } // The "Physical" Tilt
+            .graphicsLayer { rotationZ = rotation }
             .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f))
             .background(color, RoundedCornerShape(16.dp))
-            .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp)) // The "Unsaid" Thick Border
+            .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp))
             .clip(RoundedCornerShape(16.dp))
             .bounceClick(onClick = onClick)
             .padding(24.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Icon in a Circle
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(0.1f)), // Subtle dark circle
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = InkCharcoal,
-                    modifier = Modifier.size(30.dp)
-                )
+            Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.Black.copy(0.1f)), contentAlignment = Alignment.Center) {
+                Icon(imageVector = icon, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(30.dp))
             }
-
             Spacer(modifier = Modifier.width(20.dp))
-
-            // Text
             Column {
-                Text(
-                    text = title,
-                    fontFamily = LibreFont, // Serif for the "Newspaper" vibe
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = InkCharcoal
-                )
+                Text(text = title, fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = description,
-                    fontFamily = InterFont,
-                    fontSize = 14.sp,
-                    color = InkCharcoal.copy(0.7f), // Dark gray for readability
-                    lineHeight = 18.sp
-                )
+                Text(text = description, fontFamily = InterFont, fontSize = 14.sp, color = InkCharcoal.copy(0.7f), lineHeight = 18.sp)
             }
         }
     }
 }
-
-
-
-
-
-
-
