@@ -22,10 +22,6 @@ The app solves the problem of **"verified anonymity"**—proving you belong to a
 * **Authentication:** OAuth (Google & Email) with custom token expiry logic for enterprise domains.
 * **Database:** PostgreSQL with Row Level Security (RLS).
 
-## 📸 Screenshots
-| Global Feed | Write a Letter | Campus View |
-|:-----------:|:--------------:|:-----------:|
-| <img src="docs/screen1.jpg" width="200"> | <img src="docs/screen2.jpg" width="200"> | <img src="docs/screen3.jpg" width="200"> |
 
 ## 🔧 Setup & Installation
 1.  **Clone the repo**
