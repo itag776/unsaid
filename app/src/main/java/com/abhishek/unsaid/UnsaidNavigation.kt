@@ -238,7 +238,15 @@ fun UnsaidNavigation() {
                         navController.navigate(Routes.VERIFY)
                     }
                 },
-                onBackClick = { navController.popBackStack() }
+                // --- FIX STARTS HERE ---
+                // We check 'currentDestination' to ensure we are actually ON this screen
+                // before popping. This prevents rapid double-clicks from crashing the app.
+                onBackClick = {
+                    if (navController.currentDestination?.route == Routes.CHOOSE_SPACE) {
+                        navController.popBackStack()
+                    }
+                }
+                // --- FIX ENDS HERE ---
             )
         }
 
@@ -255,7 +263,12 @@ fun UnsaidNavigation() {
                         navController.navigate(Routes.VERIFY)
                     }
                 },
-                onBackClick = { navController.popBackStack() }
+                // --- FIX APPLIED HERE TOO ---
+                onBackClick = {
+                    if (navController.currentDestination?.route == Routes.CHOOSE_WRITE_SPACE) {
+                        navController.popBackStack()
+                    }
+                }
             )
         }
 
@@ -592,36 +605,101 @@ fun FeedScreen(
 fun WelcomeScreen(onReadClick: () -> Unit, onWriteClick: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("unsaid_prefs", Context.MODE_PRIVATE) }
+
+    // This state controls if the tutorial shows up
     var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_complete", false)) }
 
     Box(modifier = Modifier.fillMaxSize().background(PaperWhite)) {
-        AnimatedVisibility(visible = !showOnboarding, enter = fadeIn(animationSpec = tween(ANIMATION_DURATION)), exit = fadeOut()) {
-            Box(modifier = Modifier.fillMaxSize().background(PaperWhite), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(24.dp).offset(y = (-40).dp)) {
-                    Text("Unsaid.", fontFamily = LibreFont, fontSize = 56.sp, fontWeight = FontWeight.Black, color = InkCharcoal, modifier = Modifier.padding(bottom = 8.dp))
-                    Text("What's on your mind?", fontFamily = InterFont, fontSize = 18.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 48.dp))
-                    Box(modifier = Modifier.fillMaxWidth().height(160.dp).graphicsLayer { rotationZ = -4f }.shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f)).background(Color(0xFF4DB6AC), RoundedCornerShape(16.dp)).border(3.dp, InkCharcoal, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).bounceClick(onClick = onReadClick).padding(24.dp), contentAlignment = Alignment.CenterStart) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Email, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(40.dp))
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text("READ what the world has to say...", fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, lineHeight = 30.sp)
-                        }
+
+        // --- LAYER 1: MAIN MENU (Always Visible) ---
+        // We removed the AnimatedVisibility wrapper here.
+        // Now, this layer sits permanently at the bottom. It never fades out, so it can never get stuck "white".
+        Box(
+            modifier = Modifier.fillMaxSize().background(PaperWhite),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+                    .offset(y = (-40).dp)
+            ) {
+                Text(
+                    "Unsaid.",
+                    fontFamily = LibreFont,
+                    fontSize = 56.sp,
+                    fontWeight = FontWeight.Black,
+                    color = InkCharcoal,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    "What's on your mind?",
+                    fontFamily = InterFont,
+                    fontSize = 18.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 48.dp)
+                )
+
+                // Read Card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .graphicsLayer { rotationZ = -4f }
+                        .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f))
+                        .background(Color(0xFF4DB6AC), RoundedCornerShape(16.dp))
+                        .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .bounceClick(onClick = onReadClick)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Email, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(40.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("READ what the world has to say...", fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, lineHeight = 30.sp)
                     }
-                    Spacer(modifier = Modifier.height((-20).dp))
-                    Box(modifier = Modifier.fillMaxWidth(0.95f).height(160.dp).graphicsLayer { rotationZ = 3f }.shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f)).background(Color(0xFFFFE082), RoundedCornerShape(16.dp)).border(3.dp, InkCharcoal, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).bounceClick(onClick = onWriteClick).padding(24.dp), contentAlignment = Alignment.CenterStart) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(40.dp))
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text("Drop a letter, share your UNSAID...", fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, lineHeight = 30.sp)
-                        }
+                }
+
+                Spacer(modifier = Modifier.height((-20).dp))
+
+                // Write Card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .height(160.dp)
+                        .graphicsLayer { rotationZ = 3f }
+                        .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f))
+                        .background(Color(0xFFFFE082), RoundedCornerShape(16.dp))
+                        .border(3.dp, InkCharcoal, RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .bounceClick(onClick = onWriteClick)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.Edit, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(40.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("Drop a letter, share your UNSAID...", fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal, lineHeight = 30.sp)
                     }
                 }
             }
         }
-        AnimatedVisibility(visible = showOnboarding, enter = fadeIn(), exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()) {
+
+        // --- LAYER 2: ONBOARDING OVERLAY (Covers Main Menu) ---
+        // This sits ON TOP of Layer 1. When you click "Get Started", this fades out, revealing Layer 1.
+        AnimatedVisibility(
+            visible = showOnboarding,
+            enter = fadeIn(),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it })
+        ) {
             val pagerState = rememberPagerState(pageCount = { 3 })
             val coroutineScope = rememberCoroutineScope()
-            Column(modifier = Modifier.fillMaxSize()) {
+
+            // (Note: This is the exact same onboarding code you already had, just wrapped in the animation)
+            Column(modifier = Modifier.fillMaxSize().background(PaperWhite)) {
                 HorizontalPager(state = pagerState, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
                     Column(modifier = Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         val rotation = when(page) { 0 -> -5f; 1 -> 5f; else -> 0f }
