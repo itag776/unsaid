@@ -96,7 +96,7 @@ import com.abhishek.unsaid.ui.theme.PaperWhite
 // --- CONSTANTS & CONFIGURATION ---
 const val DAILY_POST_LIMIT = 3
 const val MAX_MSG_LENGTH = 150
-const val ANIMATION_DURATION = 1000
+const val ANIMATION_DURATION = 300
 
 // --- THEME DEFINITIONS ---
 val TextGray = Color(0xFF666666)
@@ -704,52 +704,314 @@ fun VerificationScreen(onVerificationSuccess: () -> Unit, onBackClick: () -> Uni
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WriteScreen(spaceName: String, onNavigateBack: () -> Unit, onTermsClick: () -> Unit) {
+fun WriteScreen(
+    spaceName: String,
+    onNavigateBack: () -> Unit,
+    onTermsClick: () -> Unit
+) {
+    // 1. STATE MANAGEMENT
+    // Using rememberSaveable so text survives screen rotation
     var recipient by rememberSaveable { mutableStateOf("") }
     var message by rememberSaveable { mutableStateOf("") }
     var isChecked by rememberSaveable { mutableStateOf(false) }
+
+    // Save color as an Integer because 'Color' object can't be saved in Bundle
     var selectedColorInt by rememberSaveable { mutableIntStateOf(AppPalette[4].toArgb()) }
     val selectedColor = Color(selectedColorInt)
+
+    // UI States
     var isSending by remember { mutableStateOf(false) }
     var showThankYou by remember { mutableStateOf(false) }
+
+    // Helpers
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("unsaid_prefs", Context.MODE_PRIVATE) }
 
-    LaunchedEffect(showThankYou) { if (showThankYou) { delay(2000); onNavigateBack() } }
+    // 2. AUTO-NAVIGATE AFTER SUCCESS
+    LaunchedEffect(showThankYou) {
+        if (showThankYou) {
+            delay(2000) // Wait 2 seconds so user sees "Thank You"
+            onNavigateBack()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
-            containerColor = Color(0xFFFAFAFA), snackbarHost = { SnackbarHost(snackbarHostState) },
-            topBar = { Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onNavigateBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }; Text(spaceName, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) } },
+            containerColor = Color(0xFFFAFAFA),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                    Text(
+                        text = spaceName,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            },
             bottomBar = {
-                Column(modifier = Modifier.fillMaxWidth().background(Color(0xFFFAFAFA)).padding(16.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { isChecked = !isChecked }, verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = isChecked, onCheckedChange = { isChecked = it }, colors = CheckboxDefaults.colors(checkedColor = Color.Black)); Spacer(modifier = Modifier.width(8.dp)); Column { Text("I agree to the Community Guidelines", fontFamily = InterFont, fontSize = 12.sp, color = Color.Black); Text("Read Terms & Policy", fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Blue, textDecoration = TextDecoration.Underline, modifier = Modifier.clickable { onTermsClick() }) } }
-                    Button(onClick = {
-                        if (message.isNotEmpty() && isChecked && !isSending) {
-                            val today = java.time.LocalDate.now().toString(); val lastDate = prefs.getString("last_post_date", ""); var dailyCount = prefs.getInt("daily_post_count", 0); if (lastDate != today) dailyCount = 0
-                            if (dailyCount >= DAILY_POST_LIMIT) { scope.launch { snackbarHostState.showSnackbar("Daily limit reached ($DAILY_POST_LIMIT). Come back tomorrow!") }; return@Button }
-                            isSending = true; scope.launch(Dispatchers.IO) { try { val newLetter = Letter(recipient = recipient.ifEmpty { "Anonymous" }, message = message, space = spaceName, colorHex = selectedColorInt.toLong(), reports = 0, isHidden = false); supabase.from("letters").insert(newLetter); withContext(Dispatchers.Main) { prefs.edit().putString("last_post_date", today).putInt("daily_post_count", dailyCount + 1).apply(); isSending = false; showThankYou = true } } catch(e: Exception) { isSending = false; scope.launch { snackbarHostState.showSnackbar("Error sending letter. Try again.") } } }
+                // --- FOOTER: CHECKBOX & SUBMIT BUTTON ---
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFAFAFA))
+                        .padding(16.dp)
+                ) {
+                    // Checkbox Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .clickable { isChecked = !isChecked },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = { isChecked = it },
+                            colors = CheckboxDefaults.colors(checkedColor = Color.Black)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("I agree to the Community Guidelines", fontFamily = InterFont, fontSize = 12.sp, color = Color.Black)
+                            Text(
+                                "Read Terms & Policy",
+                                fontFamily = InterFont,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Blue,
+                                textDecoration = TextDecoration.Underline,
+                                modifier = Modifier.clickable { onTermsClick() }
+                            )
                         }
-                    }, colors = ButtonDefaults.buttonColors(containerColor = if (isChecked) Color.Black else Color.LightGray), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) { if (isSending) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp)) else Text("Submit Your Message", color = Color.White, fontWeight = FontWeight.Bold) }
+                    }
+
+                    // Submit Button
+                    Button(
+                        onClick = {
+                            // A. INPUT VALIDATION
+                            if (message.isEmpty()) return@Button
+
+                            if (!isChecked) {
+                                scope.launch { snackbarHostState.showSnackbar("Please accept the guidelines.") }
+                                return@Button
+                            }
+
+                            // B. MODERATION CHECK (Blocks Bad Words)
+                            if (BadWordFilter.hasBadWord(message) || BadWordFilter.hasBadWord(recipient)) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Please keep it kind. Your message contains banned words.")
+                                }
+                                return@Button
+                            }
+
+                            // C. SENDING LOGIC
+                            if (!isSending) {
+                                // Daily Limit Check
+                                val today = java.time.LocalDate.now().toString()
+                                val lastDate = prefs.getString("last_post_date", "")
+                                var dailyCount = prefs.getInt("daily_post_count", 0)
+
+                                if (lastDate != today) dailyCount = 0
+
+                                if (dailyCount >= DAILY_POST_LIMIT) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("Daily limit reached ($DAILY_POST_LIMIT). Come back tomorrow!")
+                                    }
+                                    return@Button
+                                }
+
+                                isSending = true
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val newLetter = Letter(
+                                            recipient = recipient.ifEmpty { "Anonymous" },
+                                            message = message,
+                                            space = spaceName,
+                                            colorHex = selectedColorInt.toLong(),
+                                            reports = 0,
+                                            isHidden = false
+                                        )
+                                        // Upload to Supabase
+                                        supabase.from("letters").insert(newLetter)
+
+                                        withContext(Dispatchers.Main) {
+                                            // Update Daily Count
+                                            prefs.edit()
+                                                .putString("last_post_date", today)
+                                                .putInt("daily_post_count", dailyCount + 1)
+                                                .apply()
+
+                                            // Show Success Screen
+                                            isSending = false
+                                            showThankYou = true
+                                        }
+                                    } catch(e: Exception) {
+                                        isSending = false
+                                        scope.launch { snackbarHostState.showSnackbar("Error sending letter. Try again.") }
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (isChecked) Color.Black else Color.LightGray),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
+                    ) {
+                        if (isSending) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text("Submit Your Message", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         ) { paddingValues ->
-            Column(modifier = Modifier.padding(paddingValues).fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
-                Text("Choose a Color", fontFamily = LibreFont, fontSize = 16.sp, modifier = Modifier.padding(bottom = 8.dp).align(Alignment.CenterHorizontally))
-                LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 40.dp), modifier = Modifier.height(190.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), userScrollEnabled = false) { items(AppPalette) { color -> Box(modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)).background(color).border(width = if (selectedColor == color) 2.dp else 1.dp, color = if (selectedColor == color) Color.Black else Color.LightGray, shape = RoundedCornerShape(8.dp)).clickable { selectedColorInt = color.toArgb() }) } }
+            // --- MAIN CONTENT: COLOR GRID & MESSAGE CARD ---
+            Column(
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Color Picker
+                Text(
+                    "Choose a Color",
+                    fontFamily = LibreFont,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(bottom = 8.dp).align(Alignment.CenterHorizontally)
+                )
+
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 40.dp),
+                    modifier = Modifier.height(190.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    userScrollEnabled = false
+                ) {
+                    items(AppPalette) { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(color)
+                                .border(
+                                    width = if (selectedColor == color) 2.dp else 1.dp,
+                                    color = if (selectedColor == color) Color.Black else Color.LightGray,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { selectedColorInt = color.toArgb() }
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
-                val paperColor = selectedColor; val isDark = paperColor.luminance() < 0.5f; val inkColor = if (isDark) Color.White else Color.Black; val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
-                Card(modifier = Modifier.fillMaxWidth().border(2.dp, Color.Black, RoundedCornerShape(8.dp)), shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = paperColor)) { Column { Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) { Text("To: ", fontFamily = LibreFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = inkColor); TextField(value = recipient, onValueChange = { if (it.length <= 25) recipient = it }, placeholder = { Text("Enter Name", color = inkColor.copy(0.5f), fontFamily = LibreFont) }, colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = inkColor, focusedTextColor = inkColor, unfocusedTextColor = inkColor), textStyle = TextStyle(fontSize = 18.sp, fontFamily = LibreFont)) }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
-                    Box(modifier = Modifier.fillMaxWidth()) { TextField(value = message, onValueChange = { if (it.length <= MAX_MSG_LENGTH) message = it }, placeholder = { Text("Type Your Message Here...", color = inkColor.copy(0.5f), fontFamily = LibreFont) }, modifier = Modifier.fillMaxWidth().height(350.dp), colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = inkColor, focusedTextColor = inkColor, unfocusedTextColor = inkColor), textStyle = TextStyle(fontSize = 20.sp, fontFamily = LibreFont, lineHeight = 30.sp)); Text(text = "${message.length} / $MAX_MSG_LENGTH", fontFamily = InterFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.5f), modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
-                    Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text("SEND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor); Text("#unsaid", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f)); Text("BACK", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor) } } }
+
+                // The "Preview" Card
+                val paperColor = selectedColor
+                val isDark = paperColor.luminance() < 0.5f
+                val inkColor = if (isDark) Color.White else Color.Black
+                val borderColor = if (isDark) Color.White.copy(0.2f) else Color.Black
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(2.dp, Color.Black, RoundedCornerShape(8.dp)),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = paperColor)
+                ) {
+                    Column {
+                        // To: Field
+                        Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("To: ", fontFamily = LibreFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = inkColor)
+                            TextField(
+                                value = recipient,
+                                onValueChange = { if (it.length <= 25) recipient = it },
+                                placeholder = { Text("Enter Name", color = inkColor.copy(0.5f), fontFamily = LibreFont) },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                    cursorColor = inkColor, focusedTextColor = inkColor, unfocusedTextColor = inkColor
+                                ),
+                                textStyle = TextStyle(fontSize = 18.sp, fontFamily = LibreFont)
+                            )
+                        }
+
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
+
+                        // Message Field
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            TextField(
+                                value = message,
+                                onValueChange = { if (it.length <= MAX_MSG_LENGTH) message = it },
+                                placeholder = { Text("Type Your Message Here...", color = inkColor.copy(0.5f), fontFamily = LibreFont) },
+                                modifier = Modifier.fillMaxWidth().height(350.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                                    cursorColor = inkColor, focusedTextColor = inkColor, unfocusedTextColor = inkColor
+                                ),
+                                textStyle = TextStyle(fontSize = 20.sp, fontFamily = LibreFont, lineHeight = 30.sp)
+                            )
+                            // Character Counter
+                            Text(
+                                text = "${message.length} / $MAX_MSG_LENGTH",
+                                fontFamily = InterFont,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = inkColor.copy(0.5f),
+                                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                            )
+                        }
+
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(borderColor))
+
+                        // Footer (Decorative)
+                        Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("SEND", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
+                            Text("#unsaid", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = inkColor.copy(0.6f))
+                            Text("BACK", fontSize = 10.sp, fontWeight = FontWeight.Black, color = inkColor)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
-        AnimatedVisibility(visible = showThankYou, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) { Box(modifier = Modifier.fillMaxSize().background(PaperWhite.copy(alpha = 0.95f)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(64.dp).border(3.dp, InkCharcoal, CircleShape).padding(12.dp)); Spacer(modifier = Modifier.height(24.dp)); Text("Unsaid.", fontFamily = LibreFont, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = InkCharcoal); Spacer(modifier = Modifier.height(8.dp)); Text("Your letter has been sent.", fontFamily = InterFont, fontSize = 16.sp, color = Color.Gray) } } }
+
+        // 3. SUCCESS OVERLAY
+        AnimatedVisibility(
+            visible = showThankYou,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(PaperWhite.copy(alpha = 0.95f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = InkCharcoal,
+                        modifier = Modifier.size(64.dp).border(3.dp, InkCharcoal, CircleShape).padding(12.dp)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text("Unsaid.", fontFamily = LibreFont, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = InkCharcoal)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Your letter has been sent.", fontFamily = InterFont, fontSize = 16.sp, color = Color.Gray)
+                }
+            }
+        }
     }
 }
 
@@ -806,5 +1068,90 @@ fun LegalSection(title: String, body: String) {
 
 @Composable
 fun ColorfulSpaceCard(title: String, description: String, icon: ImageVector, color: Color, rotation: Float, onClick: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth().height(150.dp).graphicsLayer { rotationZ = rotation }.shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f)).background(color, RoundedCornerShape(16.dp)).border(3.dp, InkCharcoal, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).bounceClick(onClick = onClick).padding(24.dp), contentAlignment = Alignment.CenterStart) { Row(verticalAlignment = Alignment.CenterVertically) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.Black.copy(0.1f)), contentAlignment = Alignment.Center) { Icon(imageVector = icon, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(30.dp)) }; Spacer(modifier = Modifier.width(20.dp)); Column { Text(text = title, fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal); Spacer(modifier = Modifier.height(6.dp)); Text(text = description, fontFamily = InterFont, fontSize = 14.sp, color = InkCharcoal.copy(0.7f), lineHeight = 18.sp) } } }
+    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp).graphicsLayer { rotationZ = rotation }.shadow(12.dp, RoundedCornerShape(16.dp), spotColor = Color.Black.copy(0.3f)).background(color, RoundedCornerShape(16.dp)).border(3.dp, InkCharcoal, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).bounceClick(onClick = onClick).padding(24.dp), contentAlignment = Alignment.CenterStart) { Row(verticalAlignment = Alignment.CenterVertically) { Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(Color.Black.copy(0.1f)), contentAlignment = Alignment.Center) { Icon(imageVector = icon, contentDescription = null, tint = InkCharcoal, modifier = Modifier.size(30.dp)) }; Spacer(modifier = Modifier.width(20.dp)); Column { Text(text = title, fontFamily = LibreFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = InkCharcoal); Spacer(modifier = Modifier.height(6.dp)); Text(text = description, fontFamily = InterFont, fontSize = 14.sp, color = InkCharcoal.copy(0.7f), lineHeight = 18.sp) } } }
+}
+// --- SMART CONTENT MODERATION (Local & Free) ---
+// --- SMART CONTENT MODERATION (Handles Repeated Characters) ---
+
+
+// --- SMART CONTENT MODERATION (Updated with Comprehensive Hindi/Hinglish List) ---
+object BadWordFilter {
+
+    // 1. BLOCKED PHRASES (Checked explicitly for combinations)
+    private val blockedPhrases = listOf(
+        "mooh mein le", "teri maa ki", "teri maa ka", "tu jaa"
+    )
+
+    // 2. BLOCKED WORDS (Checked individually)
+    private val blockedWords = setOf(
+        // --- ENGLISH ---
+        "fuck", "fucking", "fucked", "fucker", "mf", "mfs", "shit", "shitty", "bullshit",
+        "bitch", "bitches", "bitching", "asshole", "bastard", "bastards",
+        "dick", "dicks", "penis", "cock", "pussy", "cunt", "whore", "slut", "sluts",
+        "nude", "sex", "porn", "xxx", "rape", "rapist",
+        "molest", "molester", "suicide",
+        "terrorist", "racist", "retard", "scam", "murder",
+
+        // --- HINGLISH / HINDI (Comprehensive List) ---
+        // A
+        "aand", "aandu",
+        // B
+        "balatkar", "balatkari", "behenchod", "bhenchod", "benchod", "betichod",
+        "bhadva", "bhadve", "bhandve", "bhangi", "bhootni", "bhosad", "bhosada", "bhosdike",
+        "bhosadike", "bsdk", "boobe", "boba", "bkl", "bkc", "bkal",
+        // C
+        "chakke", "chinaal", "chinal", "chinki", "chod", "chodu", "chooche", "choochi", "choope",
+        "choot", "chootia", "chootiya", "chu", "chuche", "chuchi", "chudaap", "chudai", "chudam",
+        "chude", "chut", "chutad", "chutadd", "chutan", "chutia", "chutiya",
+        // G
+        "gaand", "gand", "gaandu", "gandu", "gaandfat", "gaandmasti", "gaandufad", "gandfattu",
+        "gashti", "gasti", "ghassa", "ghasti", "gucchi", "gucchu",
+        // H
+        "harami", "haramkhor", "haramzade", "hawas", "hijda", "hijra",
+        // J
+        "jhant", "jhaatu", "jhatu", "jhantu",
+        // K
+        "kamine", "kaminey", "kamina", "kanjar", "kutta", "kutte", "kuttiya",
+        // L
+        "lawda", "lauda", "loda", "lodu", "lowda", "lund", "lundure", "lundtopi",
+        // M
+        "maal", "madarchod", "madhavchod", "mc", "mkc", "mkal", "mutth", "mutthal", "muth",
+        // N
+        "najayaz",
+        // P
+        "paki", "pataka",
+        // R
+        "raand", "rand", "randi", "randa", "randaap",
+        // S
+        "saala", "sala", "saale", "sale", "saali", "suar",
+        // T
+        "tatte", "tatti", "tharak", "tharki", "tmkc",
+        // W
+        "wt", "wtf"
+    )
+
+    fun hasBadWord(text: String): Boolean {
+        if (text.isEmpty()) return false
+        val normalized = text.lowercase()
+
+        // 1. Check Phrases
+        if (blockedPhrases.any { normalized.contains(it) }) return true
+
+        // 2. Check Words (Smart Regex for "f+u+c+k+")
+        return blockedWords.any { badWord ->
+            // Only use Regex for words 3 chars or longer to save performance
+            if (badWord.length > 2) {
+                val pattern = "\\b" + badWord.map { "$it+" }.joinToString("") + "\\b"
+                try {
+                    Regex(pattern).containsMatchIn(normalized.replace(Regex("[^a-z0-9\\s]"), ""))
+                } catch (e: Exception) {
+                    false
+                }
+            } else {
+                // Simple check for short words like "mc"
+                val words = normalized.split(Regex("[^a-z0-9]+"))
+                words.contains(badWord)
+            }
+        }
+    }
 }
